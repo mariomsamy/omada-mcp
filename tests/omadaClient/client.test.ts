@@ -1,0 +1,843 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ClientOperations } from '../../src/omadaClient/client.js';
+import { RequestHandler } from '../../src/omadaClient/request.js';
+import type { SiteOperations } from '../../src/omadaClient/site.js';
+import type {
+    ActiveClientInfo,
+    ClientActivity,
+    ClientPastConnection,
+    ClientRateLimitSetting,
+    OmadaApiResponse,
+    OmadaClientInfo,
+    RateLimitProfile,
+} from '../../src/types/index.js';
+
+describe('omadaClient/client', () => {
+    let mockRequest: RequestHandler;
+    let mockSite: SiteOperations;
+    let buildPath: (path: string) => string;
+    let clientOps: ClientOperations;
+
+    beforeEach(() => {
+        mockRequest = {
+            fetchPaginated: vi.fn(),
+            get: vi.fn(),
+            patch: vi.fn(),
+            ensureSuccess: vi.fn((response) => response.result),
+        } as unknown as RequestHandler;
+
+        mockSite = {
+            resolveSiteId: vi.fn(async (siteId) => siteId ?? 'default-site'),
+        } as unknown as SiteOperations;
+
+        buildPath = (path: string) => `/api${path}`;
+
+        clientOps = new ClientOperations(mockRequest, mockSite, buildPath);
+    });
+
+    describe('listClients', () => {
+        it('should fetch paginated list of clients', async () => {
+            const mockClients: OmadaClientInfo[] = [
+                { mac: '00:11:22:33:44:55', name: 'Client 1', id: 'client-1' } as OmadaClientInfo,
+                { mac: '00:11:22:33:44:66', name: 'Client 2', id: 'client-2' } as OmadaClientInfo,
+            ];
+
+            (mockRequest.fetchPaginated as ReturnType<typeof vi.fn>).mockResolvedValue(mockClients);
+
+            const clients = await clientOps.listClients('test-site');
+
+            expect(clients).toEqual(mockClients);
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith('test-site');
+            expect(mockRequest.fetchPaginated).toHaveBeenCalledWith('/api/sites/test-site/clients', {}, undefined);
+        });
+
+        it('should use default siteId if not provided', async () => {
+            const mockClients: OmadaClientInfo[] = [];
+            (mockRequest.fetchPaginated as ReturnType<typeof vi.fn>).mockResolvedValue(mockClients);
+
+            await clientOps.listClients();
+
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith(undefined);
+            expect(mockRequest.fetchPaginated).toHaveBeenCalledWith('/api/sites/default-site/clients', {}, undefined);
+        });
+    });
+
+    describe('getClient', () => {
+        it.each([
+            'aa:bb:cc:dd:ee:ff',
+            'AABB.CCDD.EEFF',
+            'aabbccddeeff',
+            ' AA-BB-CC-DD-EE-FF ',
+        ])('normalizes supported MAC spelling %s', async (identifier) => {
+            const client = { mac: 'AA:BB:CC:DD:EE:FF' };
+            vi.mocked(mockRequest.fetchPaginated).mockResolvedValue([client]);
+            await expect(clientOps.getClient(identifier, 'site/one', { 'X-Trace': 'trace' })).resolves.toEqual(client);
+            expect(mockRequest.fetchPaginated).toHaveBeenCalledWith('/api/sites/site%2Fone/clients', {}, { 'X-Trace': 'trace' });
+        });
+
+        it('rejects empty identifiers before fetching clients', async () => {
+            await expect(clientOps.getClient('  ')).rejects.toThrow('Client identifier must not be empty');
+            expect(mockRequest.fetchPaginated).not.toHaveBeenCalled();
+        });
+
+        it('does not turn malformed MACs or name substrings into an accidental match', async () => {
+            vi.mocked(mockRequest.fetchPaginated).mockResolvedValue([{ mac: 'AA:BB:CC:DD:EE:FF', name: 'Camera', hostName: null }]);
+            await expect(clientOps.getClient('AABB:CCDD:EEFF')).resolves.toBeUndefined();
+            await expect(clientOps.getClient('Cam')).resolves.toBeUndefined();
+        });
+
+        it('rejects reused IP addresses with identifiers for disambiguation', async () => {
+            vi.mocked(mockRequest.fetchPaginated).mockResolvedValue([
+                { mac: 'AA:BB:CC:DD:EE:01', ip: '192.0.2.10' },
+                { mac: 'AA:BB:CC:DD:EE:02', ip: '192.0.2.10' },
+            ]);
+            await expect(clientOps.getClient('192.0.2.10')).rejects.toThrow('AA:BB:CC:DD:EE:01, AA:BB:CC:DD:EE:02');
+        });
+
+        it.each(['aa-bb-cc-dd-ee-ff', '192.0.2.10', 'camera.local', 'front door'])('resolves %s to the matching client', async (identifier) => {
+            const client = { mac: 'AA:BB:CC:DD:EE:FF', ip: '192.0.2.10', hostName: 'Camera.Local', name: 'Front Door' };
+            vi.mocked(mockRequest.fetchPaginated).mockResolvedValue([client]);
+            await expect(clientOps.getClient(identifier)).resolves.toEqual(client);
+        });
+
+        it('rejects ambiguous names instead of picking the first client', async () => {
+            vi.mocked(mockRequest.fetchPaginated).mockResolvedValue([
+                { mac: 'AA:BB:CC:DD:EE:01', name: 'camera' },
+                { mac: 'AA:BB:CC:DD:EE:02', hostName: 'camera' },
+            ]);
+            await expect(clientOps.getClient('camera')).rejects.toThrow(/ambiguous/i);
+        });
+
+        it('should find client by MAC address', async () => {
+            const mockClients: OmadaClientInfo[] = [
+                { mac: '00:11:22:33:44:55', name: 'Client 1', id: 'client-1' } as OmadaClientInfo,
+                { mac: '00:11:22:33:44:66', name: 'Client 2', id: 'client-2' } as OmadaClientInfo,
+            ];
+
+            (mockRequest.fetchPaginated as ReturnType<typeof vi.fn>).mockResolvedValue(mockClients);
+
+            const client = await clientOps.getClient('00:11:22:33:44:66', 'test-site');
+
+            expect(client).toEqual(mockClients[1]);
+        });
+
+        it('should find client by client ID', async () => {
+            const mockClients: OmadaClientInfo[] = [
+                { mac: '00:11:22:33:44:55', name: 'Client 1', id: 'client-1' } as OmadaClientInfo,
+                { mac: '00:11:22:33:44:66', name: 'Client 2', id: 'client-2' } as OmadaClientInfo,
+            ];
+
+            (mockRequest.fetchPaginated as ReturnType<typeof vi.fn>).mockResolvedValue(mockClients);
+
+            const client = await clientOps.getClient('client-1', 'test-site');
+
+            expect(client).toEqual(mockClients[0]);
+        });
+
+        it('should return undefined if client not found', async () => {
+            const mockClients: OmadaClientInfo[] = [];
+            (mockRequest.fetchPaginated as ReturnType<typeof vi.fn>).mockResolvedValue(mockClients);
+
+            const client = await clientOps.getClient('nonexistent', 'test-site');
+
+            expect(client).toBeUndefined();
+        });
+    });
+
+    describe('listMostActiveClients', () => {
+        it.each([
+            'listMostActiveClients',
+            'listClientsActivity',
+            'getRateLimitProfiles',
+        ] as const)('%s validates actual error envelopes while preserving empty success arrays', async (method) => {
+            vi.mocked(mockRequest.ensureSuccess).mockImplementation(RequestHandler.prototype.ensureSuccess);
+            vi.mocked(mockRequest.get)
+                .mockResolvedValueOnce({ errorCode: -1005, msg: 'Operation forbidden' })
+                .mockResolvedValueOnce({ errorCode: 0 });
+            await expect(clientOps[method]()).rejects.toThrow('Operation forbidden');
+            await expect(clientOps[method]()).resolves.toEqual([]);
+        });
+
+        it('should fetch most active clients', async () => {
+            const mockClients: ActiveClientInfo[] = [
+                {
+                    mac: '00:11:22:33:44:55',
+                    name: 'Client 1',
+                    trafficDown: 1000,
+                    trafficUp: 500,
+                    wireless: false,
+                    type: 'wired',
+                    model: 'PC',
+                    totalTraffic: 1500,
+                } as ActiveClientInfo,
+            ];
+
+            const mockResponse: OmadaApiResponse<ActiveClientInfo[]> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockClients,
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            const clients = await clientOps.listMostActiveClients('test-site');
+
+            expect(clients).toEqual(mockClients);
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith('test-site');
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/sites/test-site/dashboard/active-clients', undefined, undefined);
+        });
+
+        it('should use default siteId if not provided', async () => {
+            const mockClients: ActiveClientInfo[] = [];
+            const mockResponse: OmadaApiResponse<ActiveClientInfo[]> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockClients,
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            await clientOps.listMostActiveClients();
+
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith(undefined);
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/sites/default-site/dashboard/active-clients', undefined, undefined);
+        });
+
+        it('should return empty array if result is undefined', async () => {
+            const mockResponse: OmadaApiResponse<ActiveClientInfo[]> = {
+                errorCode: 0,
+                msg: 'Success',
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            const clients = await clientOps.listMostActiveClients();
+
+            expect(clients).toEqual([]);
+        });
+    });
+
+    describe('listClientsActivity', () => {
+        it('should fetch client activity with no options', async () => {
+            const mockActivity: ClientActivity[] = [
+                {
+                    time: 1640000000,
+                    newEapClientNum: 5,
+                    newSwitchClientNum: 2,
+                    activeEapClientNum: 10,
+                    activeSwitchClientNum: 8,
+                    disconnectEapClientNum: 1,
+                    disconnectSwitchClientNum: 1,
+                } as ClientActivity,
+            ];
+
+            const mockResponse: OmadaApiResponse<ClientActivity[]> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockActivity,
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            const activity = await clientOps.listClientsActivity();
+
+            expect(activity).toEqual(mockActivity);
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith(undefined);
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/sites/default-site/dashboard/client-activity', {}, undefined);
+        });
+
+        it('should fetch client activity with start and end timestamps', async () => {
+            const mockActivity: ClientActivity[] = [];
+            const mockResponse: OmadaApiResponse<ClientActivity[]> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockActivity,
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            await clientOps.listClientsActivity({
+                siteId: 'test-site',
+                start: 1640000000,
+                end: 1640100000,
+            });
+
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith('test-site');
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/api/sites/test-site/dashboard/client-activity',
+                {
+                    start: 1640000000,
+                    end: 1640100000,
+                },
+                undefined
+            );
+        });
+
+        it('should return empty array if result is undefined', async () => {
+            const mockResponse: OmadaApiResponse<ClientActivity[]> = {
+                errorCode: 0,
+                msg: 'Success',
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            const activity = await clientOps.listClientsActivity();
+
+            expect(activity).toEqual([]);
+        });
+    });
+
+    describe('listClientsPastConnections', () => {
+        it('should fetch past connections with required options', async () => {
+            const mockConnections: ClientPastConnection[] = [
+                {
+                    mac: '00:11:22:33:44:55',
+                    name: 'Client 1',
+                    lastSeen: 1640000000000,
+                    firstSeen: 1639990000000,
+                    download: 1000000,
+                    upload: 500000,
+                    duration: 3600,
+                } as ClientPastConnection,
+            ];
+
+            const mockPaginatedResult = {
+                data: mockConnections,
+                totalRows: 1,
+                currentPage: 1,
+                currentSize: 1,
+            };
+
+            const mockResponse: OmadaApiResponse<typeof mockPaginatedResult> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockPaginatedResult,
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockPaginatedResult);
+
+            const connections = await clientOps.listClientsPastConnections({
+                page: 1,
+                pageSize: 50,
+            });
+
+            expect(connections).toEqual(mockConnections);
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith(undefined);
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/api/sites/default-site/insight/past-connection',
+                {
+                    page: 1,
+                    pageSize: 50,
+                },
+                undefined
+            );
+            expect(mockRequest.ensureSuccess).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should include all optional parameters when provided', async () => {
+            const mockPaginatedResult = {
+                data: [],
+                totalRows: 0,
+                currentPage: 1,
+                currentSize: 0,
+            };
+
+            const mockResponse: OmadaApiResponse<typeof mockPaginatedResult> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockPaginatedResult,
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockPaginatedResult);
+
+            await clientOps.listClientsPastConnections({
+                siteId: 'test-site',
+                page: 2,
+                pageSize: 100,
+                sortLastSeen: 'desc',
+                timeStart: 1640000000000,
+                timeEnd: 1640100000000,
+                guest: true,
+                searchKey: 'test',
+            });
+
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/api/sites/test-site/insight/past-connection',
+                {
+                    page: 2,
+                    pageSize: 100,
+                    'sorts.lastSeen': 'desc',
+                    'filters.timeStart': '1640000000000',
+                    'filters.timeEnd': '1640100000000',
+                    'filters.guest': 'true',
+                    searchKey: 'test',
+                },
+                undefined
+            );
+        });
+
+        it('should return empty array if data is undefined', async () => {
+            const mockPaginatedResult = {
+                totalRows: 0,
+                currentPage: 1,
+                currentSize: 0,
+            };
+
+            const mockResponse: OmadaApiResponse<typeof mockPaginatedResult> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockPaginatedResult,
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockPaginatedResult as never);
+
+            const connections = await clientOps.listClientsPastConnections({
+                page: 1,
+                pageSize: 50,
+            });
+
+            expect(connections).toEqual([]);
+        });
+    });
+
+    describe('getRateLimitProfiles', () => {
+        it('should fetch rate limit profiles', async () => {
+            const mockProfiles: RateLimitProfile[] = [
+                {
+                    id: 'profile-1',
+                    name: 'Low Speed',
+                    downLimitEnable: true,
+                    downLimit: 1024,
+                    upLimitEnable: true,
+                    upLimit: 512,
+                },
+                {
+                    id: 'profile-2',
+                    name: 'High Speed',
+                    downLimitEnable: true,
+                    downLimit: 10240,
+                    upLimitEnable: true,
+                    upLimit: 5120,
+                },
+            ];
+
+            const mockResponse: OmadaApiResponse<RateLimitProfile[]> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockProfiles,
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            const profiles = await clientOps.getRateLimitProfiles('test-site');
+
+            expect(profiles).toEqual(mockProfiles);
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith('test-site');
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/sites/test-site/rate-limit-profiles', undefined, undefined);
+            expect(mockRequest.ensureSuccess).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should return empty array if result is undefined', async () => {
+            const mockResponse: OmadaApiResponse<RateLimitProfile[]> = {
+                errorCode: 0,
+                msg: 'Success',
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            const profiles = await clientOps.getRateLimitProfiles();
+
+            expect(profiles).toEqual([]);
+            expect(mockRequest.ensureSuccess).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should throw if API returns an error', async () => {
+            const mockResponse: OmadaApiResponse<RateLimitProfile[]> = {
+                errorCode: -1,
+                msg: 'Unauthorized',
+            };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error('Unauthorized');
+            });
+
+            await expect(clientOps.getRateLimitProfiles('test-site')).rejects.toThrow('Unauthorized');
+        });
+
+        it('should pass customHeaders to get request', async () => {
+            const mockProfiles: RateLimitProfile[] = [];
+            const mockResponse: OmadaApiResponse<RateLimitProfile[]> = { errorCode: 0, result: mockProfiles };
+            const customHeaders = { 'X-Custom': 'value' };
+
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+            await clientOps.getRateLimitProfiles('test-site', customHeaders);
+
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/sites/test-site/rate-limit-profiles', undefined, customHeaders);
+        });
+    });
+
+    describe('setClientRateLimit', () => {
+        it('should set custom rate limit for a client', async () => {
+            const mockSetting: ClientRateLimitSetting = {
+                enable: true,
+                upEnable: true,
+                upLimit: 5120,
+                downEnable: true,
+                downLimit: 10240,
+            };
+
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockSetting,
+            };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            const setting = await clientOps.setClientRateLimit('00:11:22:33:44:55', 10240, 5120, 'test-site');
+
+            expect(setting).toEqual(mockSetting);
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith('test-site');
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/test-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                {
+                    mode: 0,
+                    customRateLimit: {
+                        enable: true,
+                        upEnable: true,
+                        upLimit: 5120,
+                        downEnable: true,
+                        downLimit: 10240,
+                    },
+                },
+                undefined
+            );
+            expect(mockRequest.ensureSuccess).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should use default siteId if not provided', async () => {
+            const mockSetting: ClientRateLimitSetting = {
+                enable: true,
+                upEnable: true,
+                upLimit: 1024,
+                downEnable: true,
+                downLimit: 2048,
+            };
+
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockSetting,
+            };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            await clientOps.setClientRateLimit('00:11:22:33:44:55', 2048, 1024);
+
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith(undefined);
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/default-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                expect.any(Object),
+                undefined
+            );
+        });
+
+        it('should pass customHeaders to patch request', async () => {
+            const mockSetting: ClientRateLimitSetting = { enable: true };
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = { errorCode: 0, result: mockSetting };
+            const customHeaders = { 'X-Custom': 'value' };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            await clientOps.setClientRateLimit('00:11:22:33:44:55', 1024, 512, 'test-site', customHeaders);
+
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/test-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                expect.any(Object),
+                customHeaders
+            );
+        });
+    });
+
+    describe('setClientRateLimitProfile', () => {
+        it('should apply a rate limit profile to a client', async () => {
+            const mockSetting: ClientRateLimitSetting = {
+                rateLimitId: 'profile-1',
+                enable: true,
+            };
+
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockSetting,
+            };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            const setting = await clientOps.setClientRateLimitProfile('00:11:22:33:44:55', 'profile-1', 'test-site');
+
+            expect(setting).toEqual(mockSetting);
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith('test-site');
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/test-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                { mode: 1, rateLimitProfileId: 'profile-1' },
+                undefined
+            );
+            expect(mockRequest.ensureSuccess).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should use default siteId if not provided', async () => {
+            const mockSetting: ClientRateLimitSetting = {
+                rateLimitId: 'profile-2',
+                enable: true,
+            };
+
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockSetting,
+            };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            await clientOps.setClientRateLimitProfile('00:11:22:33:44:55', 'profile-2');
+
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith(undefined);
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/default-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                expect.any(Object),
+                undefined
+            );
+        });
+
+        it('should pass customHeaders to patch request', async () => {
+            const mockSetting: ClientRateLimitSetting = { rateLimitId: 'profile-1', enable: true };
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = { errorCode: 0, result: mockSetting };
+            const customHeaders = { 'X-Custom': 'value' };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            await clientOps.setClientRateLimitProfile('00:11:22:33:44:55', 'profile-1', 'test-site', customHeaders);
+
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/test-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                expect.any(Object),
+                customHeaders
+            );
+        });
+    });
+
+    describe('disableClientRateLimit', () => {
+        it('should disable rate limit for a client', async () => {
+            const mockSetting: ClientRateLimitSetting = {
+                enable: false,
+            };
+
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockSetting,
+            };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            const setting = await clientOps.disableClientRateLimit('00:11:22:33:44:55', 'test-site');
+
+            expect(setting).toEqual(mockSetting);
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith('test-site');
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/test-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                {
+                    mode: 0,
+                    customRateLimit: {
+                        enable: false,
+                        upEnable: false,
+                        upLimit: 1,
+                        downEnable: false,
+                        downLimit: 1,
+                    },
+                },
+                undefined
+            );
+            expect(mockRequest.ensureSuccess).toHaveBeenCalledWith(mockResponse);
+        });
+
+        it('should use default siteId if not provided', async () => {
+            const mockSetting: ClientRateLimitSetting = {
+                enable: false,
+            };
+
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = {
+                errorCode: 0,
+                msg: 'Success',
+                result: mockSetting,
+            };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            await clientOps.disableClientRateLimit('00:11:22:33:44:55');
+
+            expect(mockSite.resolveSiteId).toHaveBeenCalledWith(undefined);
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/default-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                expect.any(Object),
+                undefined
+            );
+        });
+
+        it('should pass customHeaders to patch request', async () => {
+            const mockSetting: ClientRateLimitSetting = { enable: false };
+            const mockResponse: OmadaApiResponse<ClientRateLimitSetting> = { errorCode: 0, result: mockSetting };
+            const customHeaders = { 'X-Custom': 'value' };
+
+            (mockRequest.patch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockSetting);
+
+            await clientOps.disableClientRateLimit('00:11:22:33:44:55', 'test-site', customHeaders);
+
+            expect(mockRequest.patch).toHaveBeenCalledWith(
+                '/api/sites/test-site/clients/00%3A11%3A22%3A33%3A44%3A55/ratelimit',
+                expect.any(Object),
+                customHeaders
+            );
+        });
+    });
+
+    describe('getClientDetail', () => {
+        it('should return client detail by MAC', async () => {
+            const mockData = { mac: 'AA:BB:CC:DD:EE:FF', ip: '10.0.0.5' };
+            const mockResponse: OmadaApiResponse<unknown> = { errorCode: 0, result: mockData };
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockData);
+
+            const result = await clientOps.getClientDetail('AA:BB:CC:DD:EE:FF', 'test-site');
+
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/sites/test-site/clients/AA%3ABB%3ACC%3ADD%3AEE%3AFF', undefined, undefined);
+            expect(result).toEqual(mockData);
+        });
+    });
+
+    describe('getGridKnownClients', () => {
+        it('should return paginated known clients', async () => {
+            const mockData = { data: [], totalRows: 0 };
+            const mockResponse: OmadaApiResponse<unknown> = { errorCode: 0, result: mockData };
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockData);
+
+            const result = await clientOps.getGridKnownClients(1, 10, {}, 'test-site');
+
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/sites/test-site/insight/clients', { page: 1, pageSize: 10 }, undefined);
+            expect(result).toEqual(mockData);
+        });
+
+        it('should include optional filters', async () => {
+            const mockResponse: OmadaApiResponse<unknown> = { errorCode: 0, result: {} };
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue({});
+
+            await clientOps.getGridKnownClients(1, 10, { searchKey: 'phone', guest: 'false' }, 'test-site');
+
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/api/sites/test-site/insight/clients',
+                expect.objectContaining({ searchKey: 'phone', 'filters.guest': 'false' }),
+                undefined
+            );
+        });
+    });
+
+    describe('getGridClientHistory', () => {
+        it('should return paginated client history', async () => {
+            const mockData = { data: [], totalRows: 0 };
+            const mockResponse: OmadaApiResponse<unknown> = { errorCode: 0, result: mockData };
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockData);
+
+            const result = await clientOps.getGridClientHistory('BB:CC:DD:EE:FF:00', 1, 10, undefined, 'test-site');
+
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/api/sites/test-site/clients/BB%3ACC%3ADD%3AEE%3AFF%3A00/client-history',
+                { page: 1, pageSize: 10 },
+                undefined
+            );
+            expect(result).toEqual(mockData);
+        });
+    });
+
+    describe('getClientsDistribution', () => {
+        it('should return client distribution', async () => {
+            const mockData = { wired: 5, wireless24: 10, wireless5: 8 };
+            const mockResponse: OmadaApiResponse<unknown> = { errorCode: 0, result: mockData };
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockData);
+
+            const result = await clientOps.getClientsDistribution('test-site');
+
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/sites/test-site/dashboard/client-distribution', undefined, undefined);
+            expect(result).toEqual(mockData);
+        });
+    });
+
+    describe('getPastClientNum', () => {
+        it('should return past client count trend', async () => {
+            const mockData = [{ time: 1700000000, count: 15 }];
+            const mockResponse: OmadaApiResponse<unknown> = { errorCode: 0, result: mockData };
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+            (mockRequest.ensureSuccess as ReturnType<typeof vi.fn>).mockReturnValue(mockData);
+
+            const result = await clientOps.getPastClientNum(1700000000, 1700086400, 'test-site');
+
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/api/sites/test-site/dashboard/past-client-num',
+                { start: 1700000000, end: 1700086400 },
+                undefined
+            );
+            expect(result).toEqual(mockData);
+        });
+    });
+});
+
+describe('ClientOperations ported Open API routes', () => {
+    const ok = { errorCode: 0, result: { ok: true } };
+    let request: Record<'get' | 'post' | 'put' | 'patch' | 'delete' | 'request' | 'ensureSuccess', ReturnType<typeof vi.fn>>;
+    let ops: ClientOperations;
+
+    beforeEach(() => {
+        request = {
+            get: vi.fn().mockResolvedValue(ok),
+            post: vi.fn().mockResolvedValue(ok),
+            put: vi.fn().mockResolvedValue(ok),
+            patch: vi.fn().mockResolvedValue(ok),
+            delete: vi.fn().mockResolvedValue(ok),
+            request: vi.fn().mockResolvedValue(ok),
+            ensureSuccess: vi.fn((response: { result?: unknown }) => response.result),
+        };
+        const site = { resolveSiteId: vi.fn((siteId?: string) => Promise.resolve(siteId ?? 'default-site')) };
+        ops = new ClientOperations(
+            request as unknown as RequestHandler,
+            site as unknown as SiteOperations,
+            (path: string, version = 'v1') => `/openapi/${version}/omadac${path}`
+        );
+    });
+
+    it('updateClientName uses the official updateClientName route', async () => {
+        await expect(ops.updateClientName('AA-BB-CC-DD-EE-FF', 'Printer', 'site-1')).resolves.toEqual({ ok: true });
+        expect(request.patch).toHaveBeenCalledExactlyOnceWith(
+            '/openapi/v1/omadac/sites/site-1/clients/AA-BB-CC-DD-EE-FF/name',
+            { name: 'Printer' },
+            undefined
+        );
+    });
+});

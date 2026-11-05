@@ -1,0 +1,61 @@
+{
+    "name": "omada-mcp",
+    "version": "0.19.0-rc.1",
+    "description": "Security-focused Model Context Protocol server for TP-Link Omada Open API workflows",
+    "type": "module",
+    "main": "dist/index.js",
+    "bin": {
+        "omada-mcp": "./dist/index.js"
+    },
+    "scripts": {
+        "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json",
+        "lint": "biome check --error-on-warnings .",
+        "lint:fix": "biome check --write .",
+        "format": "biome format --write .",
+        "check": "npm run lint && tsc --noEmit",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "dev": "tsx src/index.ts",
+        "start": "node dist/index.js",
+        "inspector": "tsx scripts/run-inspector.ts",
+        "inspector:build": "npm run build && tsx scripts/run-inspector.ts build",
+        "docker:build": "docker build -f Dockerfile -t omada-mcp:local .",
+        "docker:run": "docker run --rm -it --env-file .env --env-file .env.local omada-mcp:local",
+        "prepare": "echo skip"
+    },
+    "files": ["dist/", "README.md", "README.Docker.md", "CHANGELOG.md", "LICENSE", ".env.example", "SECURITY.md", "docs/operations/", "docs/support-matrix.md", "docs/security-model.md"],
+    "keywords": ["mcp", "tp-link", "omada"],
+    "engines": {
+        "node": ">=24.0.0"
+    },
+    "author": "mariomsamy and contributors (see NOTICE.md)",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/mariomsamy/omada-mcp.git"
+    },
+    "homepage": "https://github.com/mariomsamy/omada-mcp#readme",
+    "bugs": {
+        "url": "https://github.com/mariomsamy/omada-mcp/issues"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.32.2",
+        "axios": "^1.20.0",
+        "dotenv": "^17.3.1",
+        "pino": "^10.3.1",
+        "zod": "^3.25.76"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.4.6",
+        "@modelcontextprotocol/inspector": "^0.21.1",
+        "@types/node": "^24.10.0",
+        "@vitest/coverage-v8": "^4.0.10",
+        "@vitest/ui": "^4.0.8",
+        "concurrently": "^9.1.0",
+        "husky": "^9.1.7",
+        "tsx": "^4.20.6",
+        "typescript": "^5.9.3",
+        "vitest": "^4.0.8"
+    }
+}

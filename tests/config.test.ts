@@ -1,0 +1,550 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_TOOL_CATEGORIES, loadConfigFromEnv, parseToolCategories } from '../src/config.js';
+import * as loggerModule from '../src/utils/logger.js';
+
+describe('config', () => {
+    let mockEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+        // Create a minimal valid environment
+        mockEnv = {
+            OMADA_BASE_URL: 'https://omada.example.com',
+            OMADA_CLIENT_ID: 'test-client-id',
+            OMADA_CLIENT_SECRET: 'test-client-secret',
+            OMADA_OMADAC_ID: 'test-omadac-id',
+        };
+
+        // Mock logger to avoid console output during tests
+        vi.spyOn(loggerModule.logger, 'warn').mockImplementation(() => {
+            // Mock implementation
+        });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    describe('loadConfigFromEnv', () => {
+        it('should load valid configuration with required fields only', () => {
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.baseUrl).toBe('https://omada.example.com');
+            expect(config.clientId).toBe('test-client-id');
+            expect(config.clientSecret).toBe('test-client-secret');
+            expect(config.omadacId).toBe('test-omadac-id');
+            expect(config.siteId).toBeUndefined();
+            expect(config.strictSsl).toBe(true); // Default
+            expect(config.logLevel).toBe('info'); // Default
+            expect(config.logFormat).toBe('plain'); // Default
+            expect(config.useHttp).toBe(false); // Default
+        });
+
+        it('should strip trailing slash from baseUrl', () => {
+            mockEnv.OMADA_BASE_URL = 'https://omada.example.com/';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.baseUrl).toBe('https://omada.example.com');
+        });
+
+        it('should throw error if OMADA_BASE_URL is missing', () => {
+            delete mockEnv.OMADA_BASE_URL;
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('Invalid environment configuration');
+        });
+
+        it('should throw error if OMADA_BASE_URL is not a valid URL', () => {
+            mockEnv.OMADA_BASE_URL = 'not-a-url';
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('Invalid environment configuration');
+        });
+
+        it('should throw error if OMADA_CLIENT_ID is missing in stdio mode', () => {
+            delete mockEnv.OMADA_CLIENT_ID;
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('Invalid environment configuration');
+        });
+
+        it('should throw error if OMADA_CLIENT_SECRET is missing in stdio mode', () => {
+            delete mockEnv.OMADA_CLIENT_SECRET;
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('Invalid environment configuration');
+        });
+
+        it('should throw error if OMADA_OMADAC_ID is missing in stdio mode', () => {
+            delete mockEnv.OMADA_OMADAC_ID;
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('Invalid environment configuration');
+        });
+
+        it('should still require OMADA_CLIENT_ID in HTTP mode', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'true';
+            mockEnv.MCP_UNSAFE_ENABLE_HTTP = 'true';
+            mockEnv.MCP_HTTP_BEARER_TOKEN = 'lab-bearer-token-0123456789abcdef0123';
+            delete mockEnv.OMADA_CLIENT_ID;
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('Invalid environment configuration');
+        });
+
+        it('should still require OMADA_CLIENT_SECRET in HTTP mode', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'true';
+            mockEnv.MCP_UNSAFE_ENABLE_HTTP = 'true';
+            mockEnv.MCP_HTTP_BEARER_TOKEN = 'lab-bearer-token-0123456789abcdef0123';
+            delete mockEnv.OMADA_CLIENT_SECRET;
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('Invalid environment configuration');
+        });
+
+        it('should still require OMADA_OMADAC_ID in HTTP mode', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'true';
+            mockEnv.MCP_UNSAFE_ENABLE_HTTP = 'true';
+            mockEnv.MCP_HTTP_BEARER_TOKEN = 'lab-bearer-token-0123456789abcdef0123';
+            delete mockEnv.OMADA_OMADAC_ID;
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('Invalid environment configuration');
+        });
+
+        it('should reject HTTP mode unless explicitly acknowledged as unsafe', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'true';
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('MCP_SERVER_USE_HTTP requires MCP_UNSAFE_ENABLE_HTTP=true');
+        });
+
+        it('should refuse HTTP mode without a bearer token of at least 32 characters', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'true';
+            mockEnv.MCP_UNSAFE_ENABLE_HTTP = 'true';
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('MCP_SERVER_USE_HTTP requires MCP_HTTP_BEARER_TOKEN');
+            mockEnv.MCP_HTTP_BEARER_TOKEN = 'short-token';
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('MCP_SERVER_USE_HTTP requires MCP_HTTP_BEARER_TOKEN');
+        });
+
+        it('should refuse a wildcard origin when HTTP mode is enabled', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'true';
+            mockEnv.MCP_UNSAFE_ENABLE_HTTP = 'true';
+            mockEnv.MCP_HTTP_BEARER_TOKEN = 'lab-bearer-token-0123456789abcdef0123';
+            mockEnv.MCP_HTTP_ALLOWED_ORIGINS = '*';
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('MCP_HTTP_ALLOWED_ORIGINS=* is not allowed');
+        });
+
+        it('should allow HTTP mode when explicitly acknowledged as unsafe', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'true';
+            mockEnv.MCP_UNSAFE_ENABLE_HTTP = 'true';
+            mockEnv.MCP_HTTP_BEARER_TOKEN = 'lab-bearer-token-0123456789abcdef0123';
+            const config = loadConfigFromEnv(mockEnv);
+            expect(config.useHttp).toBe(true);
+            expect(config.unsafeEnableHttp).toBe(true);
+        });
+
+        it('should accept optional OMADA_SITE_ID', () => {
+            mockEnv.OMADA_SITE_ID = 'test-site-id';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.siteId).toBe('test-site-id');
+        });
+
+        it('should parse OMADA_STRICT_SSL as true', () => {
+            mockEnv.OMADA_STRICT_SSL = 'true';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.strictSsl).toBe(true);
+        });
+
+        it('should parse OMADA_STRICT_SSL as false', () => {
+            mockEnv.OMADA_STRICT_SSL = 'false';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.strictSsl).toBe(false);
+        });
+
+        it('should parse OMADA_TIMEOUT as number', () => {
+            mockEnv.OMADA_TIMEOUT = '5000';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.requestTimeout).toBe(5000);
+        });
+
+        it('should accept valid log levels', () => {
+            const logLevels: Array<'debug' | 'info' | 'warn' | 'error'> = ['debug', 'info', 'warn', 'error'];
+
+            for (const level of logLevels) {
+                mockEnv.MCP_SERVER_LOG_LEVEL = level;
+                const config = loadConfigFromEnv(mockEnv);
+                expect(config.logLevel).toBe(level);
+            }
+        });
+
+        it('should accept valid log formats', () => {
+            const formats: Array<'plain' | 'json' | 'gcp-json'> = ['plain', 'json', 'gcp-json'];
+
+            for (const format of formats) {
+                mockEnv.MCP_SERVER_LOG_FORMAT = format;
+                const config = loadConfigFromEnv(mockEnv);
+                expect(config.logFormat).toBe(format);
+            }
+        });
+
+        it('should parse MCP_SERVER_USE_HTTP as true', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'true';
+            mockEnv.MCP_UNSAFE_ENABLE_HTTP = 'true';
+            mockEnv.MCP_HTTP_BEARER_TOKEN = 'lab-bearer-token-0123456789abcdef0123';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.useHttp).toBe(true);
+        });
+
+        it('should parse MCP_SERVER_USE_HTTP as false', () => {
+            mockEnv.MCP_SERVER_USE_HTTP = 'false';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.useHttp).toBe(false);
+        });
+
+        it('should parse MCP_HTTP_PORT as number', () => {
+            mockEnv.MCP_HTTP_PORT = '8080';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpPort).toBe(8080);
+        });
+
+        it('should always return stream as httpTransport regardless of env', () => {
+            const config = loadConfigFromEnv(mockEnv);
+            expect(config.httpTransport).toBe('stream');
+        });
+
+        it('should use default httpPath', () => {
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpPath).toBe('/mcp');
+        });
+
+        it('should override httpPath when explicitly set', () => {
+            mockEnv.MCP_HTTP_PATH = '/custom-path';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpPath).toBe('/custom-path');
+        });
+
+        it('should use default httpBindAddr', () => {
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpBindAddr).toBe('127.0.0.1');
+        });
+
+        it('should accept valid IPv4 bind address', () => {
+            mockEnv.MCP_HTTP_BIND_ADDR = '192.168.1.1';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpBindAddr).toBe('192.168.1.1');
+        });
+
+        it('should accept valid IPv6 bind address', () => {
+            mockEnv.MCP_HTTP_BIND_ADDR = '::1';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpBindAddr).toBe('::1');
+        });
+
+        it('should throw error for invalid bind address', () => {
+            mockEnv.MCP_HTTP_BIND_ADDR = 'invalid-address';
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('MCP_HTTP_BIND_ADDR must be a valid IPv4 or IPv6 address');
+        });
+
+        it('should parse MCP_HTTP_ENABLE_HEALTHCHECK as true', () => {
+            mockEnv.MCP_HTTP_ENABLE_HEALTHCHECK = 'true';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpEnableHealthcheck).toBe(true);
+        });
+
+        it('should parse MCP_HTTP_ENABLE_HEALTHCHECK as false', () => {
+            mockEnv.MCP_HTTP_ENABLE_HEALTHCHECK = 'false';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpEnableHealthcheck).toBe(false);
+        });
+
+        it('should accept custom healthcheck path', () => {
+            mockEnv.MCP_HTTP_HEALTHCHECK_PATH = '/health';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpHealthcheckPath).toBe('/health');
+        });
+
+        it('should parse MCP_HTTP_ALLOW_CORS as true', () => {
+            mockEnv.MCP_HTTP_ALLOW_CORS = 'true';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpAllowCors).toBe(true);
+        });
+
+        it('should parse MCP_HTTP_ALLOW_CORS as false', () => {
+            mockEnv.MCP_HTTP_ALLOW_CORS = 'false';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpAllowCors).toBe(false);
+        });
+
+        it('should use default allowed origins', () => {
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpAllowedOrigins).toEqual(['127.0.0.1', 'localhost']);
+        });
+
+        it('should parse comma-separated allowed origins', () => {
+            mockEnv.MCP_HTTP_ALLOWED_ORIGINS = 'localhost, 127.0.0.1, example.com';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpAllowedOrigins).toEqual(['localhost', '127.0.0.1', 'example.com']);
+        });
+
+        it('should handle wildcard in allowed origins', () => {
+            mockEnv.MCP_HTTP_ALLOWED_ORIGINS = '*';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpAllowedOrigins).toEqual([]);
+            expect(config.startupWarnings.some((w) => w.includes('Wildcard (*) origin allowed'))).toBe(true);
+        });
+
+        it('should throw error for invalid origin', () => {
+            mockEnv.MCP_HTTP_ALLOWED_ORIGINS = 'localhost, invalid_origin!';
+
+            expect(() => loadConfigFromEnv(mockEnv)).toThrow('MCP_HTTP_ALLOWED_ORIGINS contains invalid origin');
+        });
+
+        it('should parse MCP_HTTP_NGROK_ENABLED as true', () => {
+            mockEnv.MCP_HTTP_NGROK_ENABLED = 'true';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpNgrokEnabled).toBe(true);
+        });
+
+        it('should parse MCP_HTTP_NGROK_ENABLED as false', () => {
+            mockEnv.MCP_HTTP_NGROK_ENABLED = 'false';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpNgrokEnabled).toBe(false);
+        });
+
+        it('should accept ngrok auth token', () => {
+            mockEnv.MCP_HTTP_NGROK_AUTH_TOKEN = 'test-ngrok-token';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.httpNgrokAuthToken).toBe('test-ngrok-token');
+        });
+
+        it('should load complete configuration with all fields', () => {
+            mockEnv = {
+                OMADA_BASE_URL: 'https://omada.example.com/',
+                OMADA_CLIENT_ID: 'client-123',
+                OMADA_CLIENT_SECRET: 'secret-456',
+                OMADA_OMADAC_ID: 'omadac-789',
+                OMADA_SITE_ID: 'site-abc',
+                OMADA_STRICT_SSL: 'false',
+                OMADA_TIMEOUT: '10000',
+                OMADA_CAPABILITY_PROFILE: 'ops-write',
+                MCP_SERVER_LOG_LEVEL: 'debug',
+                MCP_SERVER_LOG_FORMAT: 'json',
+                MCP_SERVER_USE_HTTP: 'true',
+                MCP_UNSAFE_ENABLE_HTTP: 'true',
+                MCP_HTTP_BEARER_TOKEN: 'lab-bearer-token-0123456789abcdef0123',
+                MCP_HTTP_PORT: '9000',
+                MCP_HTTP_BIND_ADDR: '127.0.0.1',
+                MCP_HTTP_PATH: '/api/mcp',
+                MCP_HTTP_ENABLE_HEALTHCHECK: 'true',
+                MCP_HTTP_HEALTHCHECK_PATH: '/healthz',
+                MCP_HTTP_ALLOW_CORS: 'true',
+                MCP_HTTP_ALLOWED_ORIGINS: 'example.com, test.com',
+                MCP_HTTP_NGROK_ENABLED: 'true',
+                MCP_HTTP_NGROK_AUTH_TOKEN: 'ngrok-token-xyz',
+            };
+
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config).toMatchObject({
+                baseUrl: 'https://omada.example.com',
+                clientId: 'client-123',
+                clientSecret: 'secret-456',
+                omadacId: 'omadac-789',
+                siteId: 'site-abc',
+                strictSsl: false,
+                requestTimeout: 10000,
+                capabilityProfile: 'ops-write',
+                logLevel: 'debug',
+                logFormat: 'json',
+                useHttp: true,
+                unsafeEnableHttp: true,
+                httpPort: 9000,
+                httpTransport: 'stream',
+                httpBindAddr: '127.0.0.1',
+                httpPath: '/api/mcp',
+                httpEnableHealthcheck: true,
+                httpHealthcheckPath: '/healthz',
+                httpAllowCors: true,
+                httpAllowedOrigins: ['example.com', 'test.com'],
+                httpNgrokEnabled: true,
+                httpNgrokAuthToken: 'ngrok-token-xyz',
+            });
+            expect(config.toolCategories).toBeInstanceOf(Map);
+        });
+
+        it('should derive tool categories from capability profile when OMADA_TOOL_CATEGORIES is unset', () => {
+            mockEnv.OMADA_CAPABILITY_PROFILE = 'ops-write';
+            const config = loadConfigFromEnv(mockEnv);
+
+            expect(config.capabilityProfile).toBe('ops-write');
+            expect(config.toolCategories.get('clients')).toEqual(new Set(['read', 'write']));
+            expect(config.startupWarnings.some((warning) => warning.includes('OMADA_CAPABILITY_PROFILE=ops-write'))).toBe(true);
+        });
+    });
+});
+
+describe('parseToolCategories', () => {
+    it('should return empty categories and no warnings for empty string', () => {
+        const { categories, warnings } = parseToolCategories('');
+        expect(categories.size).toBe(0);
+        expect(warnings).toEqual([]);
+    });
+
+    it('should parse valid categories correctly', () => {
+        const { categories, warnings } = parseToolCategories('dashboard:r,clients:rw');
+        expect(categories.get('dashboard')).toEqual(new Set(['read']));
+        expect(categories.get('clients')).toEqual(new Set(['read', 'write']));
+        expect(warnings).toEqual([]);
+    });
+
+    it('should return warning for unknown category without calling logger.warn', () => {
+        const warnSpy = vi.spyOn(loggerModule.logger, 'warn');
+        const { warnings } = parseToolCategories('totally-unknown-cat:r');
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('unknown category "totally-unknown-cat"');
+        expect(warnSpy).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
+    });
+
+    it('should return warning for future category and skip it from the map', () => {
+        const warnSpy = vi.spyOn(loggerModule.logger, 'warn');
+        const { categories, warnings } = parseToolCategories('insights:r');
+        expect(categories.has('insights')).toBe(false);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toContain('"insights"');
+        expect(warnings[0]).toContain('future phase');
+        expect(warnSpy).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
+    });
+
+    it('should warn for future atomic categories used directly', () => {
+        const { categories, warnings } = parseToolCategories('insights:r');
+        expect(categories.has('insights')).toBe(false);
+        expect(warnings.some((w) => w.includes('insights'))).toBe(true);
+    });
+
+    it('network-all no longer contains future categories and expands without warnings', () => {
+        const { categories, warnings } = parseToolCategories('network-all:r');
+        expect(categories.has('network-sim-lte')).toBe(false);
+        expect(warnings.some((w) => w.includes('network-sim-lte'))).toBe(false);
+        expect(warnings.length).toBe(0);
+    });
+
+    it('should not warn for valid implemented categories in group aliases', () => {
+        const { categories, warnings } = parseToolCategories('devices-all:r');
+        expect(categories.has('devices-general')).toBe(true);
+        expect(categories.has('devices-ap')).toBe(true);
+        expect(categories.has('devices-switch')).toBe(true);
+        expect(categories.has('devices-gateway')).toBe(true);
+        expect(warnings).toHaveLength(0);
+    });
+
+    it('DEFAULT_TOOL_CATEGORIES should not contain any future categories', () => {
+        const { warnings } = parseToolCategories(DEFAULT_TOOL_CATEGORIES);
+        expect(warnings.filter((w) => w.includes('future phase'))).toHaveLength(0);
+    });
+
+    it('should not call logger.warn during parsing — warnings are buffered', () => {
+        const warnSpy = vi.spyOn(loggerModule.logger, 'warn');
+        // Parse with multiple future and unknown categories
+        parseToolCategories('insights:r,maintenance:r,unknown-thing:r');
+        expect(warnSpy).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
+    });
+});
+
+describe('loadConfigFromEnv (startupWarnings)', () => {
+    it('should include startupWarnings in the returned config', () => {
+        const env = {
+            OMADA_BASE_URL: 'https://controller.example.com',
+            OMADA_CLIENT_ID: 'client-id',
+            OMADA_CLIENT_SECRET: 'client-secret',
+            OMADA_OMADAC_ID: 'omadac-id',
+            OMADA_TOOL_CATEGORIES: 'dashboard:r',
+        };
+        const config = loadConfigFromEnv(env as NodeJS.ProcessEnv);
+        expect(config).toHaveProperty('startupWarnings');
+        expect(Array.isArray(config.startupWarnings)).toBe(true);
+    });
+
+    it('startupWarnings should be empty when no problematic categories specified', () => {
+        const env = {
+            OMADA_BASE_URL: 'https://controller.example.com',
+            OMADA_CLIENT_ID: 'client-id',
+            OMADA_CLIENT_SECRET: 'client-secret',
+            OMADA_OMADAC_ID: 'omadac-id',
+            OMADA_TOOL_CATEGORIES: 'dashboard:r',
+        };
+        const config = loadConfigFromEnv(env as NodeJS.ProcessEnv);
+        expect(config.startupWarnings).toEqual([]);
+    });
+
+    it('startupWarnings should contain warning for future categories without calling logger.warn', () => {
+        const warnSpy = vi.spyOn(loggerModule.logger, 'warn');
+        const env = {
+            OMADA_BASE_URL: 'https://controller.example.com',
+            OMADA_CLIENT_ID: 'client-id',
+            OMADA_CLIENT_SECRET: 'client-secret',
+            OMADA_OMADAC_ID: 'omadac-id',
+            OMADA_TOOL_CATEGORIES: 'insights:r',
+        };
+        const config = loadConfigFromEnv(env as NodeJS.ProcessEnv);
+        expect(config.startupWarnings.some((w) => w.includes('future phase'))).toBe(true);
+        expect(warnSpy).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
+    });
+});
+
+describe('v0.19 catalog policy configuration', () => {
+    const env = {
+        OMADA_BASE_URL: 'https://controller.example.com',
+        OMADA_CLIENT_ID: 'client-id',
+        OMADA_CLIENT_SECRET: 'secret',
+        OMADA_OMADAC_ID: 'controller-id',
+    };
+
+    it('defaults to standard discovery with hidden aliases and disabled tool headers', () => {
+        expect(loadConfigFromEnv(env)).toMatchObject({ includeDeprecated: false, catalogMode: 'standard', allowToolHeaders: false });
+    });
+
+    it('accepts explicit discovery and header options', () => {
+        expect(
+            loadConfigFromEnv({ ...env, OMADA_INCLUDE_DEPRECATED: 'true', OMADA_CATALOG_MODE: 'compact', OMADA_ALLOW_TOOL_HEADERS: 'true' })
+        ).toMatchObject({ includeDeprecated: true, catalogMode: 'compact', allowToolHeaders: true });
+    });
+
+    it.each(['OMADA_INCLUDE_DEPRECATED', 'OMADA_ALLOW_TOOL_HEADERS', 'OMADA_CATALOG_MODE'])('rejects invalid %s values', (key) => {
+        expect(() => loadConfigFromEnv({ ...env, [key]: 'invalid' })).toThrow();
+    });
+
+    it.each(['safe-read', 'ops-write', 'admin', 'compatibility'])('never grants recovery through the %s profile', (profile) => {
+        const config = loadConfigFromEnv({ ...env, OMADA_CAPABILITY_PROFILE: profile });
+        expect(config.toolCategories.has('recovery')).toBe(false);
+    });
+
+    it('requires explicit recovery permission in addition to the all alias', () => {
+        expect(parseToolCategories('all:rw').categories.has('recovery')).toBe(false);
+        const { categories, warnings } = parseToolCategories('all:rw,recovery:rw');
+        expect(categories.get('recovery')).toEqual(new Set(['read', 'write']));
+        expect(warnings.some((warning) => warning.includes('recovery'))).toBe(false);
+    });
+
+    it('warns that compatibility does not add private API support', () => {
+        const config = loadConfigFromEnv({ ...env, OMADA_CAPABILITY_PROFILE: 'compatibility' });
+        expect(config.startupWarnings).toContainEqual(expect.stringContaining('adds no private-API support'));
+    });
+});

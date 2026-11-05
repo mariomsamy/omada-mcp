@@ -1,0 +1,28 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*
+!.env.example
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+!*.code-workspace
+
+# Built Visual Studio Code Extensions
+*.vsix
+
+# Coverage directory used by vitest
+coverage/
+
+# Claude Code local settings (personal/machine-specific)
+.claude/

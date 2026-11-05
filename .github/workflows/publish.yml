@@ -1,0 +1,186 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/omada-mcp
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Lint and type-check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Check global branch coverage
+        run: node scripts/check-branch-coverage.mjs
+
+      - name: Verify tool test coverage mapping
+        run: node scripts/check-tool-tests.mjs
+
+      - name: Verify README and generated docs sync
+        run: node scripts/check-readme-sync.mjs
+
+  publish-npm:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js with npm registry
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify tag matches package version
+        id: release
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)."
+            exit 1
+          fi
+          case "$TAG_VERSION" in
+            *-oidc.*) NPM_TAG="oidc-test" ;;
+            *-*) NPM_TAG="next" ;;
+            *) NPM_TAG="latest" ;;
+          esac
+          echo "npm-tag=${NPM_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm with trusted publishing
+        run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"
+        env:
+          NPM_DIST_TAG: ${{ steps.release.outputs.npm-tag }}
+
+  publish-docker:
+    if: ${{ !contains(github.ref_name, '-oidc.') }}
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU (multi-arch)
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version tag
+        id: tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags<<EOF"
+            echo "${IMAGE_NAME}:${VERSION}"
+            case "$VERSION" in
+              *-*) ;;
+              *) echo "${IMAGE_NAME}:latest" ;;
+            esac
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tag.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  create-release:
+    needs: [publish-npm, publish-docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Extract changelog entry
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk "/^## ${VERSION}/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            echo "No changelog entry found for version ${VERSION}."
+            exit 1
+          fi
+          {
+            echo "notes<<EOF"
+            printf '%s\n' "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          body: ${{ steps.changelog.outputs.notes }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

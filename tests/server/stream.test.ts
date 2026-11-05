@@ -1,0 +1,460 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EnvironmentConfig, ToolCategory, ToolPermission } from '../../src/config.js';
+import type { OmadaClient } from '../../src/omadaClient/index.js';
+import { createServer } from '../../src/server/common.js';
+import type { StreamTransportState } from '../../src/server/stream.js';
+import {
+    closeAllStreamSessions,
+    createStreamTransport,
+    evictIdleStreamSessions,
+    handleStreamRequest,
+    MAX_STREAM_SESSIONS,
+    STREAM_SESSION_IDLE_MS,
+} from '../../src/server/stream.js';
+import { registerAllTools } from '../../src/tools/index.js';
+import { logger } from '../../src/utils/logger.js';
+
+vi.mock('../../src/omadaClient/index.js', () => ({
+    OmadaClient: vi.fn(function MockOmadaClient(this: Record<string, unknown>) {
+        return this;
+    }),
+}));
+
+// Mock dependencies
+vi.mock('../../src/utils/logger.js', () => ({
+    logger: {
+        info: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+    },
+}));
+
+vi.mock('../../src/server/common.js', () => ({
+    createServer: vi.fn(() => ({
+        connect: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        server: {
+            oninitialized: undefined,
+            onclose: undefined,
+            onerror: undefined,
+            fallbackRequestHandler: undefined,
+            fallbackNotificationHandler: undefined,
+        },
+    })),
+}));
+
+vi.mock('../../src/tools/index.js', () => ({
+    registerAllTools: vi.fn(),
+}));
+
+vi.mock('@modelcontextprotocol/sdk/server/streamableHttp.js', () => {
+    return {
+        StreamableHTTPServerTransport: vi.fn(function (
+            this: {
+                handleRequest: ReturnType<typeof vi.fn>;
+                close: ReturnType<typeof vi.fn>;
+                onerror: unknown;
+            },
+            options: {
+                onsessioninitialized?: (sessionId: string) => void;
+                onsessionclosed?: (sessionId: string) => void;
+            }
+        ) {
+            this.handleRequest = vi.fn().mockResolvedValue(undefined);
+            this.close = vi.fn().mockResolvedValue(undefined);
+            this.onerror = undefined;
+        }),
+    };
+});
+
+const initializeBody = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } },
+};
+
+describe('Stream Server', () => {
+    let mockClient: OmadaClient;
+    let mockConfig: EnvironmentConfig;
+    let mockRes: ServerResponse;
+    let mockReq: IncomingMessage;
+    let streamSessions: Map<string, StreamTransportState>;
+    const omadaConfig = {
+        baseUrl: 'https://test.local',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        omadacId: 'test-omadac-id',
+        strictSsl: true,
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+
+        // Mock OmadaClient
+        mockClient = {} as OmadaClient;
+
+        // Mock EnvironmentConfig
+        mockConfig = {
+            capabilityProfile: 'safe-read',
+            omadacId: 'test-omadac-id',
+            baseUrl: 'https://test.local',
+            clientId: 'test-client-id',
+            clientSecret: 'test-client-secret',
+            strictSsl: true,
+            requestTimeout: 30000,
+            httpAllowedOrigins: ['http://localhost', 'http://127.0.0.1'],
+            httpBindAddr: '127.0.0.1',
+            httpPort: 3000,
+            httpTransport: 'stream',
+            httpPath: '/mcp',
+            httpEnableHealthcheck: true,
+            httpHealthcheckPath: '/healthz',
+            httpAllowCors: true,
+            httpNgrokEnabled: false,
+            unsafeEnableHttp: false,
+            logLevel: 'info',
+            logFormat: 'plain',
+            toolCategories: new Map(),
+            startupWarnings: [],
+        } as EnvironmentConfig;
+
+        streamSessions = new Map();
+
+        // Mock ServerResponse
+        mockRes = {
+            writeHead: vi.fn(),
+            write: vi.fn(),
+            end: vi.fn(),
+            on: vi.fn(),
+        } as unknown as ServerResponse;
+
+        // Mock IncomingMessage
+        mockReq = {
+            method: 'POST',
+            url: '/mcp',
+            headers: {
+                host: 'localhost:3000',
+                origin: 'http://localhost',
+            },
+            on: vi.fn(),
+        } as unknown as IncomingMessage;
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    describe('createStreamTransport', () => {
+        it('should create Stream transport with session management enabled', () => {
+            const { transport, server } = createStreamTransport(mockClient, mockConfig);
+
+            expect(StreamableHTTPServerTransport).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    sessionIdGenerator: expect.any(Function),
+                    allowedOrigins: mockConfig.httpAllowedOrigins,
+                    enableDnsRebindingProtection: true,
+                })
+            );
+
+            expect(transport).toBeDefined();
+            expect(server).toBeDefined();
+            expect(transport.onerror).toBeDefined();
+        });
+
+        it('should log startup message describing optional session IDs', () => {
+            createStreamTransport(mockClient, mockConfig);
+
+            expect(logger.info).toHaveBeenCalledWith(
+                'Starting Streamable HTTP transport; Mcp-Session-Id headers are optional in client-credentials mode'
+            );
+        });
+
+        it('should set up session callbacks', () => {
+            createStreamTransport(mockClient, mockConfig);
+
+            const callArgs = vi.mocked(StreamableHTTPServerTransport).mock.calls[0][0];
+
+            expect(callArgs.onsessioninitialized).toBeDefined();
+            expect(callArgs.onsessionclosed).toBeDefined();
+        });
+
+        it('should call onsessioninitialized callback', () => {
+            createStreamTransport(mockClient, mockConfig);
+
+            const callArgs = vi.mocked(StreamableHTTPServerTransport).mock.calls[0][0];
+            const sessionId = 'test-session-id';
+
+            callArgs.onsessioninitialized?.(sessionId);
+
+            expect(logger.info).toHaveBeenCalledWith('Session initialized', { sessionId });
+        });
+
+        it('should call onsessionclosed callback', () => {
+            createStreamTransport(mockClient, mockConfig);
+
+            const callArgs = vi.mocked(StreamableHTTPServerTransport).mock.calls[0][0];
+            const sessionId = 'test-session-id';
+
+            callArgs.onsessionclosed?.(sessionId);
+
+            expect(logger.info).toHaveBeenCalledWith('Session closed', { sessionId });
+        });
+
+        it('should handle transport errors through onerror handler', () => {
+            const { transport } = createStreamTransport(mockClient, mockConfig);
+
+            const testError = new Error('Transport error');
+            if (transport.onerror) {
+                transport.onerror(testError);
+            }
+
+            expect(logger.error).toHaveBeenCalledWith('Streamable HTTP transport error', {
+                error: testError,
+                message: testError.message,
+            });
+        });
+
+        it('should generate unique session IDs for each connection', () => {
+            createStreamTransport(mockClient, mockConfig);
+
+            const callArgs = vi.mocked(StreamableHTTPServerTransport).mock.calls[0][0];
+            const sessionId1 = callArgs.sessionIdGenerator?.();
+            const sessionId2 = callArgs.sessionIdGenerator?.();
+
+            expect(sessionId1).toBeDefined();
+            expect(sessionId2).toBeDefined();
+            expect(sessionId1).not.toBe(sessionId2);
+        });
+
+        it('forwards category permissions and catalog policy to registerAllTools', () => {
+            const toolCategories = new Map<ToolCategory, Set<ToolPermission>>([['dashboard' as ToolCategory, new Set<ToolPermission>(['read'])]]);
+            const configWithCategories = {
+                ...mockConfig,
+                toolCategories,
+                includeDeprecated: true,
+                allowToolHeaders: true,
+                catalogMode: 'compact' as const,
+            };
+            createStreamTransport(mockClient, configWithCategories);
+            expect(vi.mocked(registerAllTools)).toHaveBeenCalledWith(expect.anything(), mockClient, toolCategories, configWithCategories);
+        });
+    });
+
+    describe('handleStreamRequest', () => {
+        it('creates a new session when no session header is provided', async () => {
+            await handleStreamRequest(mockConfig, omadaConfig, mockReq, mockRes, initializeBody, streamSessions);
+
+            expect(StreamableHTTPServerTransport).toHaveBeenCalled();
+            const transportCall = vi.mocked(StreamableHTTPServerTransport).mock.calls[0][0];
+            transportCall.onsessioninitialized?.('new-session');
+
+            expect(streamSessions.has('new-session')).toBe(true);
+            const serverMock = vi.mocked(createServer).mock.results[0].value;
+            expect(serverMock.connect).toHaveBeenCalled();
+        });
+
+        it('reuses existing sessions when the header matches', async () => {
+            const existingState = createStreamTransport(mockClient, mockConfig);
+            existingState.connected = true;
+            streamSessions.set('existing-session', existingState);
+
+            const reqWithSession = {
+                ...mockReq,
+                headers: { ...mockReq.headers, 'mcp-session-id': 'existing-session' },
+            } as unknown as IncomingMessage;
+
+            await handleStreamRequest(mockConfig, omadaConfig, reqWithSession, mockRes, undefined, streamSessions);
+
+            expect(existingState.transport.handleRequest).toHaveBeenCalledWith(reqWithSession, mockRes, undefined);
+            expect(existingState.server.connect).not.toHaveBeenCalled();
+        });
+
+        it('returns 404 when a session header does not match any tracked session', async () => {
+            const reqWithUnknownSession = {
+                ...mockReq,
+                headers: { ...mockReq.headers, 'mcp-session-id': 'missing-session' },
+            } as unknown as IncomingMessage;
+
+            await handleStreamRequest(mockConfig, omadaConfig, reqWithUnknownSession, mockRes, undefined, streamSessions);
+
+            expect(mockRes.writeHead).toHaveBeenCalledWith(404, expect.any(Object));
+            expect(mockRes.end).toHaveBeenCalled();
+        });
+
+        it('logs missing origin or host headers with placeholders', async () => {
+            const reqWithoutOrigin = {
+                ...mockReq,
+                headers: {
+                    host: 'localhost:3000',
+                },
+            } as unknown as IncomingMessage;
+
+            await handleStreamRequest(mockConfig, omadaConfig, reqWithoutOrigin, mockRes, initializeBody, streamSessions);
+
+            expect(logger.info).toHaveBeenCalledWith(
+                'Streamable HTTP request received',
+                expect.objectContaining({
+                    origin: '(not set)',
+                })
+            );
+        });
+
+        it('should handle missing host header', async () => {
+            const reqWithoutHost = {
+                ...mockReq,
+                headers: {
+                    origin: 'http://localhost',
+                },
+            } as unknown as IncomingMessage;
+
+            await handleStreamRequest(mockConfig, omadaConfig, reqWithoutHost, mockRes, initializeBody, streamSessions);
+
+            expect(logger.info).toHaveBeenCalledWith(
+                'Streamable HTTP request received',
+                expect.objectContaining({
+                    host: '(not set)',
+                })
+            );
+        });
+
+        it('should pass parsed body to transport', async () => {
+            const parsedBody = initializeBody;
+
+            await handleStreamRequest(mockConfig, omadaConfig, mockReq, mockRes, parsedBody, streamSessions);
+
+            const transport = vi.mocked(StreamableHTTPServerTransport).mock.results[0].value;
+            expect(transport.handleRequest).toHaveBeenCalledWith(mockReq, mockRes, parsedBody);
+        });
+
+        it('should log successful request handling', async () => {
+            await handleStreamRequest(mockConfig, omadaConfig, mockReq, mockRes, initializeBody, streamSessions);
+
+            expect(logger.debug).toHaveBeenCalledWith('Streamable HTTP request handled', {
+                method: 'POST',
+                sessionId: '(new-session)',
+            });
+        });
+
+        it('should handle transport errors and log', async () => {
+            const testError = new Error('Request handling failed');
+            // @ts-expect-error - Mock implementation for testing error handling
+            vi.mocked(StreamableHTTPServerTransport).mockImplementationOnce(function (this: Record<string, unknown>) {
+                this.handleRequest = vi.fn().mockRejectedValue(testError);
+                this.onerror = undefined;
+            });
+
+            await expect(handleStreamRequest(mockConfig, omadaConfig, mockReq, mockRes, initializeBody, streamSessions)).rejects.toThrow(
+                'Request handling failed'
+            );
+
+            expect(logger.error).toHaveBeenCalledWith(
+                'Failed to handle Streamable HTTP request',
+                expect.objectContaining({
+                    error: testError,
+                    method: 'POST',
+                    url: '/mcp',
+                    origin: 'http://localhost',
+                    host: 'localhost:3000',
+                    allowedOrigins: mockConfig.httpAllowedOrigins,
+                })
+            );
+        });
+
+        it('should handle GET requests', async () => {
+            const getReq = {
+                ...mockReq,
+                method: 'GET',
+            } as unknown as IncomingMessage;
+
+            await handleStreamRequest(mockConfig, omadaConfig, getReq, mockRes, undefined, streamSessions);
+
+            expect(logger.info).toHaveBeenCalledWith(
+                'Streamable HTTP request received',
+                expect.objectContaining({
+                    method: 'GET',
+                })
+            );
+        });
+
+        it('should handle DELETE requests', async () => {
+            const deleteReq = {
+                ...mockReq,
+                method: 'DELETE',
+            } as unknown as IncomingMessage;
+
+            await handleStreamRequest(mockConfig, omadaConfig, deleteReq, mockRes, undefined, streamSessions);
+
+            expect(logger.info).toHaveBeenCalledWith(
+                'Streamable HTTP request received',
+                expect.objectContaining({
+                    method: 'DELETE',
+                })
+            );
+        });
+
+        it('refuses to create a session for a non-initialize request without a session header', async () => {
+            await handleStreamRequest(mockConfig, omadaConfig, mockReq, mockRes, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, streamSessions);
+
+            expect(mockRes.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
+            expect(StreamableHTTPServerTransport).not.toHaveBeenCalled();
+            expect(streamSessions.size).toBe(0);
+        });
+
+        it('returns 503 once the session cap is reached and no session is idle', async () => {
+            for (let index = 0; index < MAX_STREAM_SESSIONS; index += 1) {
+                streamSessions.set(`s-${index}`, createStreamTransport(mockClient, mockConfig));
+            }
+            vi.mocked(StreamableHTTPServerTransport).mockClear();
+
+            await handleStreamRequest(mockConfig, omadaConfig, mockReq, mockRes, initializeBody, streamSessions);
+
+            expect(mockRes.writeHead).toHaveBeenCalledWith(503, expect.any(Object));
+            expect(StreamableHTTPServerTransport).not.toHaveBeenCalled();
+            expect(streamSessions.size).toBe(MAX_STREAM_SESSIONS);
+        });
+
+        it('evicts idle sessions so a new session can be admitted at the cap', async () => {
+            for (let index = 0; index < MAX_STREAM_SESSIONS; index += 1) {
+                streamSessions.set(`s-${index}`, createStreamTransport(mockClient, mockConfig));
+            }
+            const idle = streamSessions.get('s-0') as StreamTransportState;
+            idle.lastAccessed = Date.now() - STREAM_SESSION_IDLE_MS - 1;
+
+            await handleStreamRequest(mockConfig, omadaConfig, mockReq, mockRes, initializeBody, streamSessions);
+
+            expect(streamSessions.has('s-0')).toBe(false);
+            expect(idle.server.close).toHaveBeenCalled();
+            expect(mockRes.writeHead).not.toHaveBeenCalledWith(503, expect.any(Object));
+        });
+
+        it('evictIdleStreamSessions keeps recently used sessions', async () => {
+            const fresh = createStreamTransport(mockClient, mockConfig);
+            const stale = createStreamTransport(mockClient, mockConfig);
+            stale.lastAccessed = 0;
+            streamSessions.set('fresh', fresh);
+            streamSessions.set('stale', stale);
+
+            expect(await evictIdleStreamSessions(streamSessions, STREAM_SESSION_IDLE_MS + 10)).toBe(1);
+            expect([...streamSessions.keys()]).toEqual(['fresh']);
+        });
+
+        it('closes all sessions via helper', async () => {
+            const firstState = createStreamTransport(mockClient, mockConfig);
+            const secondState = createStreamTransport(mockClient, mockConfig);
+            streamSessions.set('one', firstState);
+            streamSessions.set('two', secondState);
+
+            await closeAllStreamSessions(streamSessions);
+
+            expect(firstState.server.close).toHaveBeenCalled();
+            expect(secondState.server.close).toHaveBeenCalled();
+            expect(firstState.transport.close).toHaveBeenCalled();
+            expect(secondState.transport.close).toHaveBeenCalled();
+            expect(streamSessions.size).toBe(0);
+        });
+    });
+});

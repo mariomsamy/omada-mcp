@@ -1,0 +1,1121 @@
+import { z } from 'zod';
+
+import type { CustomHeaders, GetDeviceStatsOptions, OmadaApiResponse, OmadaDeviceInfo, OmadaDeviceStats, OswStackDetail } from '../types/index.js';
+
+import type { RequestHandler } from './request.js';
+import type { SiteOperations } from './site.js';
+
+/** Writable fields from 03-device.json: ApRadioSetting. GET-only fields must never be replayed. */
+export const apRadioSettingSchema = z
+    .object({
+        radioEnable: z.boolean().optional(),
+        channelRange: z.array(z.number().int().positive()).optional(),
+        channelWidth: z.enum(['2', '3', '4', '5', '6', '7', '8', '9', '10']).optional(),
+        channel: z.string().regex(/^\d+$/).optional(),
+        txPower: z.number().int().optional(),
+        txPowerLevel: z.number().int().min(0).max(4).optional(),
+        channelLimitEnable: z.boolean().optional(),
+        freq: z.number().int().nonnegative().optional(),
+        wirelessMode: z
+            .union([
+                z.literal(-2),
+                z.literal(3),
+                z.literal(4),
+                z.literal(13),
+                z.literal(17),
+                z.literal(7),
+                z.literal(10),
+                z.literal(16),
+                z.literal(18),
+                z.literal(11),
+                z.literal(19),
+            ])
+            .optional(),
+    })
+    .strict();
+
+export const apRadiosConfigSchema = z
+    .object({
+        radioSetting2g: apRadioSettingSchema.optional(),
+        radioSetting5g: apRadioSettingSchema.optional(),
+        radioSetting5g1: apRadioSettingSchema.optional(),
+        radioSetting5g2: apRadioSettingSchema.optional(),
+        radioSetting6g: apRadioSettingSchema.optional(),
+    })
+    .strict();
+
+export type ApRadioSetting = z.infer<typeof apRadioSettingSchema>;
+export type ApRadiosConfig = z.infer<typeof apRadiosConfigSchema>;
+
+/**
+ * Device-related operations for the Omada API.
+ */
+export class DeviceOperations {
+    constructor(
+        private readonly request: RequestHandler,
+        private readonly site: SiteOperations,
+        private readonly buildPath: (path: string) => string
+    ) {}
+
+    /**
+     * List all devices in a site.
+     */
+    public async listDevices(siteId?: string, customHeaders?: CustomHeaders): Promise<OmadaDeviceInfo[]> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        return await this.request.fetchPaginated<OmadaDeviceInfo>(
+            this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/devices`),
+            {},
+            customHeaders
+        );
+    }
+
+    /**
+     * Get a specific device by MAC address or device ID.
+     */
+    public async getDevice(identifier: string, siteId?: string, customHeaders?: CustomHeaders): Promise<OmadaDeviceInfo | undefined> {
+        const devices = await this.listDevices(siteId, customHeaders);
+        return devices.find((device) => device.mac === identifier || device.deviceId === identifier);
+    }
+
+    /**
+     * Get detailed information about a switch stack.
+     */
+    public async getSwitchStackDetail(stackId: string, siteId?: string, customHeaders?: CustomHeaders): Promise<OswStackDetail> {
+        if (!stackId) {
+            throw new Error('A stack id must be provided.');
+        }
+
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/stacks/${encodeURIComponent(stackId)}`);
+
+        const response = await this.request.get<OmadaApiResponse<OswStackDetail>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Search for devices globally across all sites the user has access to.
+     */
+    public async searchDevices(searchKey: string, customHeaders?: CustomHeaders): Promise<OmadaDeviceInfo[]> {
+        if (!searchKey) {
+            throw new Error('A search key must be provided.');
+        }
+
+        const path = this.buildPath(`/devices?searchKey=${encodeURIComponent(searchKey)}`);
+        const response = await this.request.get<OmadaApiResponse<OmadaDeviceInfo[]>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get statistics for global adopted devices with filtering and pagination.
+     */
+    public async listDevicesStats(options: GetDeviceStatsOptions, customHeaders?: CustomHeaders): Promise<OmadaDeviceStats> {
+        const queryParams = new URLSearchParams();
+        queryParams.append('page', options.page.toString());
+        queryParams.append('pageSize', options.pageSize.toString());
+
+        if (options.searchMacs) {
+            queryParams.append('searchMacs', options.searchMacs);
+        }
+        if (options.searchNames) {
+            queryParams.append('searchNames', options.searchNames);
+        }
+        if (options.searchModels) {
+            queryParams.append('searchModels', options.searchModels);
+        }
+        if (options.searchSns) {
+            queryParams.append('searchSns', options.searchSns);
+        }
+        if (options.filterTag) {
+            queryParams.append('filters.tag', options.filterTag);
+        }
+        if (options.filterDeviceSeriesType) {
+            queryParams.append('filters.deviceSeriesType', options.filterDeviceSeriesType);
+        }
+
+        const path = this.buildPath(`/devices/stat?${queryParams.toString()}`);
+        const response = await this.request.get<OmadaApiResponse<OmadaDeviceStats>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get detailed information for a specific switch.
+     * OperationId: getSwitch
+     */
+    public async getSwitchDetail(switchMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!switchMac) {
+            throw new Error('A switchMac must be provided.');
+        }
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/switches/${encodeURIComponent(switchMac)}`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get detailed information for a specific gateway.
+     * OperationId: getGateway
+     */
+    public async getGatewayDetail(gatewayMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!gatewayMac) {
+            throw new Error('A gatewayMac must be provided.');
+        }
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get WAN status for a specific gateway.
+     * OperationId: getGatewayWanPortStatus
+     */
+    public async getGatewayWanStatus(gatewayMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!gatewayMac) {
+            throw new Error('A gatewayMac must be provided.');
+        }
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/wan-status`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get LAN status for a specific gateway.
+     * OperationId: getGatewayLanPortStatus
+     */
+    public async getGatewayLanStatus(gatewayMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!gatewayMac) {
+            throw new Error('A gatewayMac must be provided.');
+        }
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/lan-status`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get port information for a specific gateway.
+     * OperationId: getGatewayPorts
+     */
+    public async getGatewayPorts(gatewayMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        if (!gatewayMac) {
+            throw new Error('A gatewayMac must be provided.');
+        }
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/ports`);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const result = this.request.ensureSuccess(response);
+        return Array.isArray(result) ? result : [];
+    }
+
+    /**
+     * Get detailed information for a specific AP.
+     * OperationId: getAp
+     */
+    public async getApDetail(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) {
+            throw new Error('An apMac must be provided.');
+        }
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get radio information for a specific AP.
+     * OperationId: getApRadios
+     */
+    public async getApRadios(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        if (!apMac) {
+            throw new Error('An apMac must be provided.');
+        }
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/radios`);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const result = this.request.ensureSuccess(response);
+        return Array.isArray(result) ? result : [];
+    }
+
+    /**
+     * Get port information for a switch stack.
+     * OperationId: getStackPorts
+     */
+    public async getStackPorts(stackId: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        if (!stackId) {
+            throw new Error('A stackId must be provided.');
+        }
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/stacks/${encodeURIComponent(stackId)}/ports`);
+        return await this.request.fetchPaginated<unknown>(path, {}, customHeaders);
+    }
+
+    /**
+     * List devices pending adoption in a site.
+     * OperationId: getGridPendingDevices
+     */
+    public async listPendingDevices(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/grid/devices/pending`);
+        return await this.request.fetchPaginated<unknown>(path, {}, customHeaders);
+    }
+
+    // -------------------------------------------------------------------------
+    // Device Management — Phase 1 Read Tools (issue #36)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Get all devices in a site including offline devices.
+     * OperationId: getAllDeviceBySite
+     */
+    public async getAllDeviceBySite(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/devices/all`);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get latest firmware info for a device.
+     * OperationId: getFirmwareInfo
+     */
+    public async getFirmwareInfo(deviceMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!deviceMac) throw new Error('A deviceMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/devices/${encodeURIComponent(deviceMac)}/latest-firmware-info`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get auto-check upgrade plan list.
+     * OperationId: getGridAutoCheckUpgrade
+     */
+    public async getGridAutoCheckUpgrade(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
+        const path = this.buildPath('/upgrade/autoCheck');
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page, pageSize }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * List switch VLAN network assignments.
+     * OperationId: listSwitchNetworks
+     */
+    public async listSwitchNetworks(
+        switchMac: string,
+        page: number,
+        pageSize: number,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!switchMac) throw new Error('A switchMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/switches/${encodeURIComponent(switchMac)}/networks`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page, pageSize }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get switch general configuration.
+     * OperationId: getGeneralConfig (switch)
+     */
+    public async getSwitchGeneralConfig(switchMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!switchMac) throw new Error('A switchMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/switches/${encodeURIComponent(switchMac)}/general-config`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get cable test logs for a switch.
+     * OperationId: getCableTestLogs
+     */
+    public async getCableTestLogs(switchMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!switchMac) throw new Error('A switchMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/cable-test/switches/${encodeURIComponent(switchMac)}/logs`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get cable test full results for a switch.
+     * OperationId: getCableTestFullResults
+     */
+    public async getCableTestFullResults(switchMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!switchMac) throw new Error('A switchMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/cable-test/switches/${encodeURIComponent(switchMac)}/full-results`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get stack LAG list.
+     * OperationId: getOswStackLagList
+     */
+    public async getOswStackLagList(stackId: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        if (!stackId) throw new Error('A stackId must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/stacks/${encodeURIComponent(stackId)}/lags`);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get stack VLAN network list.
+     * OperationId: getStackNetworkList
+     */
+    public async getStackNetworkList(
+        stackId: string,
+        page: number,
+        pageSize: number,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!stackId) throw new Error('A stackId must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/stacks/${encodeURIComponent(stackId)}/networks`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page, pageSize }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get AP uplink configuration.
+     * OperationId: getApUplinkConfig
+     */
+    public async getApUplinkConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/uplink-config`);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get AP per-radio configuration.
+     * OperationId: getRadiosConfig
+     */
+    public async getRadiosConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/radio-config`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Update AP per-radio configuration.
+     * OperationId: modifyRadiosConfig
+     */
+    public async setRadiosConfig(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/radio-config`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get AP VLAN configuration.
+     * OperationId: getApVlanConfig
+     */
+    public async getApVlanConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/vlan`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get per-AP mesh link statistics.
+     * OperationId: getMeshStatistics
+     */
+    public async getMeshStatistics(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/mesh/statistics`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get RF scan results for an AP.
+     * OperationId: getRFScanResult
+     */
+    public async getRFScanResult(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/rf-scan-result`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get speed test results for an AP.
+     * OperationId: getSpeedTestResults
+     */
+    public async getSpeedTestResults(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/speed-test-result`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get AP SNMP configuration.
+     * OperationId: getApSnmpConfig
+     */
+    public async getApSnmpConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/snmp`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get AP LLDP configuration.
+     * OperationId: getApLldpConfig
+     */
+    public async getApLldpConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/lldp`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get AP general configuration.
+     * OperationId: getGeneralConfig_2
+     */
+    public async getApGeneralConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/general-config`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Update AP general configuration.
+     * OperationId: modifyGeneralConfig_2
+     */
+    public async setApGeneralConfig(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/general-config`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get AP wired uplink detail.
+     * OperationId: getUplinkWiredDetail
+     */
+    public async getUplinkWiredDetail(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/wired-uplink`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get AP wired downlink device list.
+     * OperationId: getDownlinkWiredDevices
+     */
+    public async getDownlinkWiredDevices(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/wired-downlink`);
+        const response = await this.request.get<OmadaApiResponse<{ wiredDownlinkList?: unknown[] }>>(path, undefined, customHeaders);
+        const result = this.request.ensureSuccess(response) as { wiredDownlinkList?: unknown[] };
+        return result?.wiredDownlinkList ?? [];
+    }
+
+    // -------------------------------------------------------------------------
+    // Device Management — Phase 2 Read Tools (issue #73)
+    // -------------------------------------------------------------------------
+
+    // --- devices-general ---
+
+    public async getFirmwareUpgradePlan(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
+        const path = this.buildPath('/upgrade/overview/plans');
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page, pageSize }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getUpgradeLogs(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
+        const path = this.buildPath('/upgrade/overview/logs');
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page, pageSize }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getDeviceTagList(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/devices/tag`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    // --- devices-ap ---
+
+    public async getApQosConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/qos`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setApQosConfig(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/qos`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getApIpv6Config(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/ipv6-setting`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setApIpv6Config(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/ipv6-setting`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    // -------------------------------------------------------------------------
+    // Device Management — Phase 2 additional Read Tools (issue #73)
+    // -------------------------------------------------------------------------
+
+    // --- devices-gateway new ---
+
+    public async getSitesGatewaysGeneralConfig(gatewayMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/general-config`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesGatewaysGeneralConfig(
+        gatewayMac: string,
+        payload: unknown,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/general-config`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesGatewaysConfigGeneral(
+        gatewayMac: string,
+        payload: unknown,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/config/general`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesGatewaysConfigServices(
+        gatewayMac: string,
+        payload: unknown,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/config/services`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesGatewaysConfigAdvanced(
+        gatewayMac: string,
+        payload: unknown,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/config/advanced`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesGatewaysConfigRadios(
+        gatewayMac: string,
+        payload: unknown,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/config/radios`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesGatewaysConfigWlans(gatewayMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/config/wlans`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesGatewaysPortConfig(
+        gatewayMac: string,
+        portName: string,
+        payload: unknown,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        if (!portName) throw new Error('A portName must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(
+            `/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/ports/${encodeURIComponent(portName)}/config`
+        );
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesGatewaysMultiPortsConfig(
+        gatewayMac: string,
+        payload: unknown,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/multi-ports/config`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesGatewaysPin(gatewayMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/pin`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesGatewaysSimCardUsed(gatewayMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/simCardUsed`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesHealthGatewaysWansDetails(gatewayMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!gatewayMac) throw new Error('A gatewayMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/health/gateways/${encodeURIComponent(gatewayMac)}/wans/details`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    // --- devices-ap new ---
+
+    public async getSitesApsIpSetting(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/ip-setting`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesApsIpSetting(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/ip-setting`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesApsChannelLimit(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/channel-limit`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesApsAvailableChannel(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/available-channel`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setApChannelConfig(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/channel-config`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getAfcConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/afc-config`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setAfcConfig(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/afc-config`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesApsLoadBalance(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/load-balance`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesApsLoadBalance(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/load-balance`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesApsOfdma(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/ofdma`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesApsOfdma(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/ofdma`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesApsPowerSaving(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/power-saving`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesApsPowerSaving(
+        apMac: string,
+        payload: {
+            timeEnable: boolean;
+            bandEnable: boolean;
+            startTimeH?: number;
+            startTimeM?: number;
+            endTimeH?: number;
+            endTimeM?: number;
+            bands?: number[];
+            idleDuration?: number;
+        },
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/power-saving`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesApsTrunkSetting(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/trunk-setting`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesApsTrunkSetting(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/trunk-setting`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesApsChannelLimit(
+        apMac: string,
+        payload: {
+            channelLimitType: number;
+        },
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/channel-limit`);
+        const response = await this.request.put<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesApsBridge(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/bridge`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setSitesApsBridge(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/bridge`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setApServiceConfig(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/service-config`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setApWlanGroup(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/wlan-group`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getAntennaGainConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/antenna-gain`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async setAntennaGainConfig(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/antenna-gain`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async listSitesApsPorts(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/ports`);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const result = this.request.ensureSuccess(response);
+        return Array.isArray(result) ? result : [];
+    }
+
+    public async setSitesApsPortConfig(apMac: string, payload: unknown, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!apMac) throw new Error('An apMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/aps/${encodeURIComponent(apMac)}/ports`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, payload, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    // --- devices-switch new ---
+
+    public async getSitesSwitchesEs(switchMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!switchMac) throw new Error('A switchMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/switches/es/${encodeURIComponent(switchMac)}`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesSwitchesEsGeneralConfig(switchMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!switchMac) throw new Error('A switchMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/switches/es/${encodeURIComponent(switchMac)}/general-config`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async listSitesCableTestSwitchesPorts(switchMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+        if (!switchMac) throw new Error('A switchMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/cable-test/switches/${encodeURIComponent(switchMac)}/ports`);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const result = this.request.ensureSuccess(response);
+        return Array.isArray(result) ? result : [];
+    }
+
+    public async listSitesCableTestSwitchesIncrementResults(switchMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        if (!switchMac) throw new Error('A switchMac must be provided.');
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(
+            `/sites/${encodeURIComponent(resolvedSiteId)}/cable-test/switches/${encodeURIComponent(switchMac)}/increment-results`
+        );
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    // --- devices-general new ---
+
+    public async getUpgradeOverviewCritical(customHeaders?: CustomHeaders): Promise<unknown> {
+        const path = this.buildPath('/upgrade/overview/critical');
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getUpgradeOverviewTryBeta(customHeaders?: CustomHeaders): Promise<unknown> {
+        const path = this.buildPath('/upgrade/overview/try-beta');
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async listUpgradeFirmwares(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
+        const path = this.buildPath('/upgrade/firmwares');
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page, pageSize }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async listUpgradeOverviewFirmwares(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
+        const path = this.buildPath('/upgrade/overview/firmwares');
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page, pageSize }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async listSitesStacks(siteId?: string, page?: number, pageSize?: number, customHeaders?: CustomHeaders): Promise<unknown> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/stacks`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page: page ?? 1, pageSize: pageSize ?? 10 }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    public async getSitesDeviceWhiteList(siteId?: string, page?: number, pageSize?: number, customHeaders?: CustomHeaders): Promise<unknown> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/device-white-list`);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page: page ?? 1, pageSize: pageSize ?? 10 }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Get load balance configuration for a specific AP.
+     * OperationId: getApLoadBalanceConfig
+     * Delegates to getSitesApsLoadBalance to avoid duplication and ensure consistent apMac validation.
+     */
+    public getApLoadBalance(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        return this.getSitesApsLoadBalance(apMac, siteId, customHeaders);
+    }
+
+    /**
+     * Get OFDMA configuration for a specific AP.
+     * OperationId: getApOfdmaConfig
+     * Delegates to getSitesApsOfdma to avoid duplication and ensure consistent apMac validation.
+     */
+    public getApOfdmaConfig(apMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        return this.getSitesApsOfdma(apMac, siteId, customHeaders);
+    }
+
+    /**
+     * Start adopting a pending device (ported operation; route verified in docs/openapi).
+     * OperationId: adoptDevice
+     */
+    public async adoptDevice(
+        deviceMac: string,
+        credentials: { username?: string; password?: string } | undefined,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/devices/${encodeURIComponent(deviceMac)}/start-adopt`);
+        const response = await this.request.post<OmadaApiResponse<unknown>>(path, credentials ?? {}, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Start a cable test on explicit switch ports (ported operation; route verified in docs/openapi).
+     * OperationId: startCableTest
+     */
+    public async startCableTest(switchMac: string, ports: number[], siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/cable-test/switches/${encodeURIComponent(switchMac)}/start`);
+        const response = await this.request.post<OmadaApiResponse<unknown>>(path, { portList: ports.map((port) => ({ port })) }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Upgrade a device with the latest cloud firmware (ported operation; route verified in docs/openapi).
+     * OperationId: onlineUpgrade
+     */
+    public async startOnlineUpgrade(deviceMac: string, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/devices/${encodeURIComponent(deviceMac)}/start-online-upgrade`);
+        const response = await this.request.post<OmadaApiResponse<unknown>>(path, {}, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Batch modify switch VLAN interfaces (ported operation; route verified in docs/openapi).
+     * OperationId: batchApplySwitchNetwork
+     */
+    public async applySwitchNetworks(
+        switchMac: string,
+        applyList: { id: string; vlan: number; status?: boolean }[],
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/switches/${encodeURIComponent(switchMac)}/networks`);
+        const response = await this.request.post<OmadaApiResponse<unknown>>(path, { applyList }, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+
+    /**
+     * Connect (1) or disconnect (0) a gateway WAN port (ported operation; route verified in docs/openapi).
+     * OperationId: changeInternetState
+     */
+    public async changeGatewayInternetState(
+        gatewayMac: string,
+        state: { portId: number; operation: 0 | 1; virtualWanId?: string },
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        const resolvedSiteId = await this.site.resolveSiteId(siteId);
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/gateways/${encodeURIComponent(gatewayMac)}/internet-state`);
+        const response = await this.request.post<OmadaApiResponse<unknown>>(path, state, customHeaders);
+        return this.request.ensureSuccess(response);
+    }
+}
