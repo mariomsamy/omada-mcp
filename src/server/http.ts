@@ -362,13 +362,13 @@ export async function startHttpServer(config: EnvironmentConfig): Promise<void> 
 }
 
 export {
+    createShutdownHandler,
     getRequestUrl,
-    sendJson,
+    isLikelySensitiveString,
+    isSensitiveKey,
+    maskValue,
     sanitizeHeaders,
     sanitizeHeaderValue,
     sanitizePayload,
-    isSensitiveKey,
-    isLikelySensitiveString,
-    maskValue,
-    createShutdownHandler,
+    sendJson,
 };

@@ -63,17 +63,15 @@ describe('omadaClient/client', () => {
     });
 
     describe('getClient', () => {
-        it.each([
-            'aa:bb:cc:dd:ee:ff',
-            'AABB.CCDD.EEFF',
-            'aabbccddeeff',
-            ' AA-BB-CC-DD-EE-FF ',
-        ])('normalizes supported MAC spelling %s', async (identifier) => {
-            const client = { mac: 'AA:BB:CC:DD:EE:FF' };
-            vi.mocked(mockRequest.fetchPaginated).mockResolvedValue([client]);
-            await expect(clientOps.getClient(identifier, 'site/one', { 'X-Trace': 'trace' })).resolves.toEqual(client);
-            expect(mockRequest.fetchPaginated).toHaveBeenCalledWith('/api/sites/site%2Fone/clients', {}, { 'X-Trace': 'trace' });
-        });
+        it.each(['aa:bb:cc:dd:ee:ff', 'AABB.CCDD.EEFF', 'aabbccddeeff', ' AA-BB-CC-DD-EE-FF '])(
+            'normalizes supported MAC spelling %s',
+            async (identifier) => {
+                const client = { mac: 'AA:BB:CC:DD:EE:FF' };
+                vi.mocked(mockRequest.fetchPaginated).mockResolvedValue([client]);
+                await expect(clientOps.getClient(identifier, 'site/one', { 'X-Trace': 'trace' })).resolves.toEqual(client);
+                expect(mockRequest.fetchPaginated).toHaveBeenCalledWith('/api/sites/site%2Fone/clients', {}, { 'X-Trace': 'trace' });
+            }
+        );
 
         it('rejects empty identifiers before fetching clients', async () => {
             await expect(clientOps.getClient('  ')).rejects.toThrow('Client identifier must not be empty');
@@ -145,18 +143,17 @@ describe('omadaClient/client', () => {
     });
 
     describe('listMostActiveClients', () => {
-        it.each([
-            'listMostActiveClients',
-            'listClientsActivity',
-            'getRateLimitProfiles',
-        ] as const)('%s validates actual error envelopes while preserving empty success arrays', async (method) => {
-            vi.mocked(mockRequest.ensureSuccess).mockImplementation(RequestHandler.prototype.ensureSuccess);
-            vi.mocked(mockRequest.get)
-                .mockResolvedValueOnce({ errorCode: -1005, msg: 'Operation forbidden' })
-                .mockResolvedValueOnce({ errorCode: 0 });
-            await expect(clientOps[method]()).rejects.toThrow('Operation forbidden');
-            await expect(clientOps[method]()).resolves.toEqual([]);
-        });
+        it.each(['listMostActiveClients', 'listClientsActivity', 'getRateLimitProfiles'] as const)(
+            '%s validates actual error envelopes while preserving empty success arrays',
+            async (method) => {
+                vi.mocked(mockRequest.ensureSuccess).mockImplementation(RequestHandler.prototype.ensureSuccess);
+                vi.mocked(mockRequest.get)
+                    .mockResolvedValueOnce({ errorCode: -1005, msg: 'Operation forbidden' })
+                    .mockResolvedValueOnce({ errorCode: 0 });
+                await expect(clientOps[method]()).rejects.toThrow('Operation forbidden');
+                await expect(clientOps[method]()).resolves.toEqual([]);
+            }
+        );
 
         it('should fetch most active clients', async () => {
             const mockClients: ActiveClientInfo[] = [

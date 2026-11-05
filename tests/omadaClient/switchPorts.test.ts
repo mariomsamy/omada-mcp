@@ -76,13 +76,14 @@ describe('omadaClient/switchPorts', () => {
         }
     }
 
-    it.each(
-        [[], [0], [-1], [1.5], [2147483648], [1, 1], Array.from({ length: 33 }, (_, i) => i + 1), ['*']].map((ports) => [ports])
-    )('rejects invalid explicit port list %j without requests', async (ports) => {
-        await expect(operations.setSwitchPorts(mac, ports as number[], { operation: 'status', status: 1 })).rejects.toThrow();
-        expect(site.resolveSiteId).not.toHaveBeenCalled();
-        expect(request.request).not.toHaveBeenCalled();
-    });
+    it.each([[], [0], [-1], [1.5], [2147483648], [1, 1], Array.from({ length: 33 }, (_, i) => i + 1), ['*']].map((ports) => [ports]))(
+        'rejects invalid explicit port list %j without requests',
+        async (ports) => {
+            await expect(operations.setSwitchPorts(mac, ports as number[], { operation: 'status', status: 1 })).rejects.toThrow();
+            expect(site.resolveSiteId).not.toHaveBeenCalled();
+            expect(request.request).not.toHaveBeenCalled();
+        }
+    );
 
     it('rejects an invented multi-port profile assignment and invalid MAC', async () => {
         expect(spec.paths[`${prefix}/multi-ports/profile`]).toBeUndefined();

@@ -143,20 +143,12 @@ describe('extended secret key coverage', () => {
         expect(redactSecrets({ [key]: 'abc', siteId: 'site-1' })).toEqual({ [key]: '********', siteId: 'site-1' });
     });
 
-    it.each([
-        'portMapping',
-        'dhcpSnooping',
-        'pingTarget',
-        'keyword',
-        'bypassList',
-        'passiveMode',
-        'keepAliveInterval',
-        'siteId',
-        'mac',
-        'name',
-    ])('keeps ordinary configuration field %s readable', (key) => {
-        expect(isSensitiveKey(key)).toBe(false);
-    });
+    it.each(['portMapping', 'dhcpSnooping', 'pingTarget', 'keyword', 'bypassList', 'passiveMode', 'keepAliveInterval', 'siteId', 'mac', 'name'])(
+        'keeps ordinary configuration field %s readable',
+        (key) => {
+            expect(isSensitiveKey(key)).toBe(false);
+        }
+    );
 
     it('masks secret-keyed pairs inside free text without hiding the rest', () => {
         expect(redactSecretsInText('Invalid radiusPwd=hunter2 for site 5f9b')).toBe('Invalid radiusPwd="********" for site 5f9b');

@@ -121,60 +121,49 @@ describe('tools/setApConfig', () => {
         expect(client.setApGeneralConfig).not.toHaveBeenCalled();
     });
 
-    it.each(split5gCases)('recognizes an actual $configType GET as a split-band no-op', async ({
-        configType,
-        getter,
-        setter,
-        requested,
-        observed,
-    }) => {
-        client.getApQosConfig.mockResolvedValue({ support5g2: true });
-        const snapshot = Object.freeze({ ...observed });
-        client[getter].mockResolvedValue(snapshot);
+    it.each(split5gCases)(
+        'recognizes an actual $configType GET as a split-band no-op',
+        async ({ configType, getter, setter, requested, observed }) => {
+            client.getApQosConfig.mockResolvedValue({ support5g2: true });
+            const snapshot = Object.freeze({ ...observed });
+            client[getter].mockResolvedValue(snapshot);
 
-        const result = JSON.parse((await call(configType, requested, false)).content[0].text);
+            const result = JSON.parse((await call(configType, requested, false)).content[0].text);
 
-        expect(result.result).toMatchObject({ noOp: true, before: snapshot, verification: { status: 'verified', attempts: 0, differences: [] } });
-        expect(client[setter]).not.toHaveBeenCalled();
-        expect(client[getter]).toHaveBeenCalledTimes(1);
-        expect(client.getApQosConfig).toHaveBeenCalledExactlyOnceWith('AA:BB:CC:DD:EE:FF', 'site-1', undefined);
-        expect(result.result.before).not.toHaveProperty(configType === 'qos' ? 'deliveryEnable5g1' : 'maxClients5g1');
-    });
+            expect(result.result).toMatchObject({ noOp: true, before: snapshot, verification: { status: 'verified', attempts: 0, differences: [] } });
+            expect(client[setter]).not.toHaveBeenCalled();
+            expect(client[getter]).toHaveBeenCalledTimes(1);
+            expect(client.getApQosConfig).toHaveBeenCalledExactlyOnceWith('AA:BB:CC:DD:EE:FF', 'site-1', undefined);
+            expect(result.result.before).not.toHaveProperty(configType === 'qos' ? 'deliveryEnable5g1' : 'maxClients5g1');
+        }
+    );
 
-    it.each(split5gCases)('verifies $configType after applying against actual GET field names', async ({
-        configType,
-        getter,
-        setter,
-        requested,
-        observed,
-        ignored,
-    }) => {
-        client.getApQosConfig.mockResolvedValue({ support5g2: true });
-        client[getter].mockResolvedValueOnce(ignored).mockResolvedValue(observed);
+    it.each(split5gCases)(
+        'verifies $configType after applying against actual GET field names',
+        async ({ configType, getter, setter, requested, observed, ignored }) => {
+            client.getApQosConfig.mockResolvedValue({ support5g2: true });
+            client[getter].mockResolvedValueOnce(ignored).mockResolvedValue(observed);
 
-        const result = JSON.parse((await call(configType, requested, false)).content[0].text);
+            const result = JSON.parse((await call(configType, requested, false)).content[0].text);
 
-        expect(client[setter]).toHaveBeenCalledExactlyOnceWith('AA:BB:CC:DD:EE:FF', requested, 'site-1', undefined);
-        expect(result.result).toMatchObject({ noOp: false, before: ignored, verification: { status: 'verified', attempts: 1, differences: [] } });
-    });
+            expect(client[setter]).toHaveBeenCalledExactlyOnceWith('AA:BB:CC:DD:EE:FF', requested, 'site-1', undefined);
+            expect(result.result).toMatchObject({ noOp: false, before: ignored, verification: { status: 'verified', attempts: 1, differences: [] } });
+        }
+    );
 
-    it.each(split5gCases)('reports ignored $configType first-radio changes as mismatch, not missing', async ({
-        configType,
-        getter,
-        setter,
-        requested,
-        ignored,
-        firstField,
-    }) => {
-        client.getApQosConfig.mockResolvedValue({ support5g2: true });
-        client[getter].mockResolvedValue(ignored);
+    it.each(split5gCases)(
+        'reports ignored $configType first-radio changes as mismatch, not missing',
+        async ({ configType, getter, setter, requested, ignored, firstField }) => {
+            client.getApQosConfig.mockResolvedValue({ support5g2: true });
+            client[getter].mockResolvedValue(ignored);
 
-        const result = JSON.parse((await call(configType, requested, false)).content[0].text);
+            const result = JSON.parse((await call(configType, requested, false)).content[0].text);
 
-        expect(result.result.verification).toEqual({ status: 'mismatch', attempts: 3, differences: [{ path: firstField, reason: 'different' }] });
-        expect(client[setter]).toHaveBeenCalledTimes(1);
-        expect(client[getter]).toHaveBeenCalledTimes(4);
-    });
+            expect(result.result.verification).toEqual({ status: 'mismatch', attempts: 3, differences: [{ path: firstField, reason: 'different' }] });
+            expect(client[setter]).toHaveBeenCalledTimes(1);
+            expect(client[getter]).toHaveBeenCalledTimes(4);
+        }
+    );
 
     it.each([false, undefined, 'true'])('does not infer a split QoS radio from support5g2=%s', async (support5g2) => {
         client.getApQosConfig.mockResolvedValue({ support5g2, deliveryEnable5g: false, deliveryEnable5g2: true });

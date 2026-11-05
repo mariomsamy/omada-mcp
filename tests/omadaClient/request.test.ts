@@ -54,15 +54,12 @@ describe('RequestHandler', () => {
         vi.useRealTimers();
     });
 
-    it.each([
-        { minRequestIntervalMs: -1 },
-        { maxReadRetries: 0.5 },
-        { maxRetryDelayMs: Number.NaN },
-        { maxPages: 0 },
-        { maxRecords: Infinity },
-    ])('rejects invalid request bounds %j', (options) => {
-        expect(() => makeHandler(options)).toThrow('Invalid request option');
-    });
+    it.each([{ minRequestIntervalMs: -1 }, { maxReadRetries: 0.5 }, { maxRetryDelayMs: Number.NaN }, { maxPages: 0 }, { maxRecords: Infinity }])(
+        'rejects invalid request bounds %j',
+        (options) => {
+            expect(() => makeHandler(options)).toThrow('Invalid request option');
+        }
+    );
     it('forwards GET params and headers without allowing Authorization override', async () => {
         const params = { siteId: 'lab', page: 1 };
         await expect(settle(handler.get('/items', params, { Authorization: 'wrong', 'X-Trace': 'trace' }))).resolves.toEqual(success);
@@ -140,16 +137,14 @@ describe('RequestHandler', () => {
         expect(http.request).toHaveBeenCalledTimes(2);
         expect(auth.clearToken).toHaveBeenCalledTimes(1);
     });
-    it.each([
-        'Token expired',
-        'token has expired',
-        'ACCESS TOKEN HAS EXPIRED',
-        'Please re-initiate the refreshToken process',
-    ])('recognizes token expiry message %s', async (msg) => {
-        http.request.mockResolvedValueOnce(response({ errorCode: -1, msg }));
-        await settle(handler.get('/items'));
-        expect(auth.clearToken).toHaveBeenCalledTimes(1);
-    });
+    it.each(['Token expired', 'token has expired', 'ACCESS TOKEN HAS EXPIRED', 'Please re-initiate the refreshToken process'])(
+        'recognizes token expiry message %s',
+        async (msg) => {
+            http.request.mockResolvedValueOnce(response({ errorCode: -1, msg }));
+            await settle(handler.get('/items'));
+            expect(auth.clearToken).toHaveBeenCalledTimes(1);
+        }
+    );
     it.each([-1005, -1505, -44106, -44111, -44116, -44118])('does not refresh or retry nonrecoverable code %s', async (errorCode) => {
         const failure = { errorCode, msg: 'Token expired but operation is forbidden' };
         http.request.mockResolvedValue(response(failure));
@@ -157,17 +152,14 @@ describe('RequestHandler', () => {
         expect(auth.clearToken).not.toHaveBeenCalled();
         expect(http.request).toHaveBeenCalledTimes(1);
     });
-    it.each([
-        undefined,
-        null,
-        'payload',
-        { errorCode: -1, msg: 42 },
-        { errorCode: 0, msg: 'token expired' },
-    ])('does not treat response %j as expired authentication', async (data) => {
-        http.request.mockResolvedValue({ data });
-        await expect(settle(handler.get('/items'))).resolves.toEqual(data);
-        expect(auth.clearToken).not.toHaveBeenCalled();
-    });
+    it.each([undefined, null, 'payload', { errorCode: -1, msg: 42 }, { errorCode: 0, msg: 'token expired' }])(
+        'does not treat response %j as expired authentication',
+        async (data) => {
+            http.request.mockResolvedValue({ data });
+            await expect(settle(handler.get('/items'))).resolves.toEqual(data);
+            expect(auth.clearToken).not.toHaveBeenCalled();
+        }
+    );
     it.each([401, 403])('replays a mutation only after explicit authentication rejection (HTTP %s)', async (status) => {
         http.request.mockRejectedValueOnce(httpError(status, status === 403 ? { msg: 'token expired' } : {}));
         await expect(settle(handler.post('/action'))).resolves.toEqual(success);
@@ -372,21 +364,13 @@ describe('RequestHandler', () => {
             await expect(settle(handler.fetchPaginated('/items'))).resolves.toEqual([]);
             expect(http.request).toHaveBeenCalledTimes(1);
         });
-        it.each([
-            null,
-            undefined,
-            {},
-            [],
-            'wrong',
-            1,
-            { data: null },
-            { data: {} },
-            { data: 'wrong' },
-            { totalRows: 3 },
-        ])('rejects missing/malformed result %j', async (result) => {
-            pages(result);
-            await expect(settle(handler.fetchPaginated('/items'))).rejects.toThrow(/pagination/i);
-        });
+        it.each([null, undefined, {}, [], 'wrong', 1, { data: null }, { data: {} }, { data: 'wrong' }, { totalRows: 3 }])(
+            'rejects missing/malformed result %j',
+            async (result) => {
+                pages(result);
+                await expect(settle(handler.fetchPaginated('/items'))).rejects.toThrow(/pagination/i);
+            }
+        );
         it.each([-1, 1.5, '2', Number.NaN, Infinity])('rejects invalid advertised total %s', async (totalRows) => {
             pages({ data: [], totalRows });
             await expect(settle(handler.fetchPaginated('/items'))).rejects.toThrow('Invalid pagination totalRows');

@@ -55,20 +55,16 @@ describe('webhook destination validation', () => {
     describe('DNS resolution and allowlist (M3)', () => {
         const resolveTo = (addresses: string[]) => vi.fn(async () => addresses);
 
-        it.each([
-            ['127.0.0.1'],
-            ['10.0.0.8'],
-            ['169.254.169.254'],
-            ['::1'],
-            ['fe80::1'],
-            ['93.184.216.34', '192.168.1.1'],
-        ])('refuses a public-looking host that resolves to %s', async (...addresses) => {
-            const resolve = resolveTo(addresses);
-            await expect(checkWebhookDestination('https://hooks.example.com/x', { resolve })).resolves.toBe(
-                'host resolves to a loopback, private, link-local or reserved address'
-            );
-            expect(resolve).toHaveBeenCalledWith('hooks.example.com');
-        });
+        it.each([['127.0.0.1'], ['10.0.0.8'], ['169.254.169.254'], ['::1'], ['fe80::1'], ['93.184.216.34', '192.168.1.1']])(
+            'refuses a public-looking host that resolves to %s',
+            async (...addresses) => {
+                const resolve = resolveTo(addresses);
+                await expect(checkWebhookDestination('https://hooks.example.com/x', { resolve })).resolves.toBe(
+                    'host resolves to a loopback, private, link-local or reserved address'
+                );
+                expect(resolve).toHaveBeenCalledWith('hooks.example.com');
+            }
+        );
 
         it('accepts a host that resolves only to public addresses', async () => {
             await expect(

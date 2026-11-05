@@ -77,18 +77,16 @@ describe('AuthManager', () => {
             });
         });
 
-        it.each([
-            {},
-            { accessToken: '' },
-            { accessToken: ' ' },
-            { accessToken: 123 },
-        ])('rejects malformed successful token %j and permits recovery', async (result) => {
-            vi.mocked(mockHttp.post)
-                .mockResolvedValueOnce({ data: { errorCode: 0, result } })
-                .mockResolvedValueOnce({ data: { errorCode: 0, result: { accessToken: 'valid', expiresIn: 3600 } } });
-            await expect(authManager.getAccessToken()).rejects.toThrow('no valid access token');
-            await expect(authManager.getAccessToken()).resolves.toBe('valid');
-        });
+        it.each([{}, { accessToken: '' }, { accessToken: ' ' }, { accessToken: 123 }])(
+            'rejects malformed successful token %j and permits recovery',
+            async (result) => {
+                vi.mocked(mockHttp.post)
+                    .mockResolvedValueOnce({ data: { errorCode: 0, result } })
+                    .mockResolvedValueOnce({ data: { errorCode: 0, result: { accessToken: 'valid', expiresIn: 3600 } } });
+                await expect(authManager.getAccessToken()).rejects.toThrow('no valid access token');
+                await expect(authManager.getAccessToken()).resolves.toBe('valid');
+            }
+        );
 
         it('surfaces generic authentication errors and non-Error transport failures', async () => {
             vi.mocked(mockHttp.post)

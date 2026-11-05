@@ -127,17 +127,13 @@ describe('tools/updateSsid', () => {
         expect(client.updateSsidBasicConfig).not.toHaveBeenCalled();
     });
 
-    it.each([
-        {},
-        { enable: false },
-        { broadcast: 'false' },
-        { name: '😀'.repeat(9) },
-        { name: '' },
-        { security: 0 },
-    ])('rejects unsupported or invalid changes %j', async (changes) => {
-        await expect(call(changes)).rejects.toThrow();
-        expect(client.getSsidDetail).not.toHaveBeenCalled();
-    });
+    it.each([{}, { enable: false }, { broadcast: 'false' }, { name: '😀'.repeat(9) }, { name: '' }, { security: 0 }])(
+        'rejects unsupported or invalid changes %j',
+        async (changes) => {
+            await expect(call(changes)).rejects.toThrow();
+            expect(client.getSsidDetail).not.toHaveBeenCalled();
+        }
+    );
 
     it('fails closed if the GET omits required configuration or hides the password', async () => {
         state = { name: 'incomplete' };

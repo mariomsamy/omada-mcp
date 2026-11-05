@@ -57,7 +57,7 @@ describe('mutation audit events', () => {
         for (const secret of ['hunter2', '"k"', '1234', '"42"']) expect(serialized).not.toContain(secret);
         expect(serialized).toContain('"name":"ok"');
         expect(JSON.stringify(result.structuredContent)).not.toContain('hunter2');
-        expect((result.structuredContent?.result as { before: Record<string, unknown> }).before).toEqual({
+        expect((result.structuredContent as { result: { before: Record<string, unknown> } }).result.before).toEqual({
             radiusPwd: '********',
             md5Key: '********',
             pinCode: '********',

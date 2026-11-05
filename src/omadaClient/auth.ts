@@ -48,7 +48,7 @@ export class AuthManager {
      * Ensure a valid access token is available, refreshing or re-authenticating if necessary.
      */
     private ensureAccessToken(): Promise<void> {
-        if (this.authenticationPromise) {
+        if (this.authenticationPromise !== undefined) {
             return this.authenticationPromise;
         }
         if (this.accessToken && this.tokenExpiresAt && Date.now() < this.tokenExpiresAt) {

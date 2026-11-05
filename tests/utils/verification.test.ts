@@ -86,17 +86,14 @@ describe('semantic verification', () => {
         expect(read).toHaveBeenCalledTimes(1);
     });
 
-    it.each([
-        { maxAttempts: 0 },
-        { maxAttempts: 6 },
-        { delayMs: -1 },
-        { readTimeoutMs: 5001 },
-        { delayMs: Number.NaN },
-    ])('rejects unbounded options before writes: %j', async (options) => {
-        const write = vi.fn();
-        await expect(applyWithVerification({ requested: { on: true }, write, options })).rejects.toThrow('Verification option');
-        expect(write).not.toHaveBeenCalled();
-    });
+    it.each([{ maxAttempts: 0 }, { maxAttempts: 6 }, { delayMs: -1 }, { readTimeoutMs: 5001 }, { delayMs: Number.NaN }])(
+        'rejects unbounded options before writes: %j',
+        async (options) => {
+            const write = vi.fn();
+            await expect(applyWithVerification({ requested: { on: true }, write, options })).rejects.toThrow('Verification option');
+            expect(write).not.toHaveBeenCalled();
+        }
+    );
 
     it('skips a write when the before-state already matches', async () => {
         const write = vi.fn();
