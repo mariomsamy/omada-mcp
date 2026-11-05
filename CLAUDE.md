@@ -1,6 +1,6 @@
 # CLAUDE.md: contributor guide for AI coding agents
 
-safe-omada-mcp is a TypeScript (ESM, Node 24) MCP server for TP-Link
+omada-mcp is a TypeScript (ESM, Node 24) MCP server for TP-Link
 Omada controllers, using only the official Open API. Safety is the
 product: read-only by default, dry-run by default, no raw API access.
 Read [CODEBASE.md](CODEBASE.md) and [CONTRIBUTING.md](CONTRIBUTING.md)
