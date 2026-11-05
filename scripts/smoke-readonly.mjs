@@ -6,6 +6,9 @@ import { loadConfigFromEnv, parseToolCategories } from '../dist/config.js';
 import { OmadaClient } from '../dist/omadaClient/index.js';
 import { createServer } from '../dist/server/common.js';
 import { registerAllTools } from '../dist/tools/index.js';
+import packageMetadata from '../package.json' with { type: 'json' };
+
+const packageVersion = packageMetadata.version;
 
 const config = loadConfigFromEnv();
 const controller = new OmadaClient(config);
@@ -102,5 +105,5 @@ try {
     await server.close();
 }
 console.log(
-    JSON.stringify({ version: '0.19.0-rc.1', observedAt: new Date().toISOString(), strictSsl: config.strictSsl, requests, results }, null, 2)
+    JSON.stringify({ version: packageVersion, observedAt: new Date().toISOString(), strictSsl: config.strictSsl, requests, results }, null, 2)
 );

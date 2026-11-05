@@ -4,7 +4,7 @@
 agent how to use this server's tools for a whole task (triage, audit,
 safe change), in the right order and with the right profile. Skills
 contain no code and make no network calls. They only reference tools
-that safe-omada-mcp registers, and a check during development confirms
+that omada-mcp registers, and a check during development confirms
 every tool name in them exists.
 
 ## Index

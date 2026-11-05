@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { deviceMacSchema, siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
+import { requireDeviceByMac } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     switchMac: deviceMacSchema.describe('Switch MAC address.'),
@@ -46,8 +47,20 @@ export function registerStartCableTestTool(server: McpServer, client: OmadaClien
                 };
             },
             async ({ switchMac, ports, siteId, customHeaders, dryRun }) => {
+                // Preflight (read only): the switch must be known to the selected site.
+                const device = await requireDeviceByMac(
+                    () => client.listDevices(siteId, customHeaders),
+                    switchMac,
+                    'was not found in the selected site (see listDevices)'
+                );
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, switchMac, ports };
+                    return {
+                        accepted: true,
+                        dryRun: true,
+                        switchMac,
+                        ports,
+                        device: { mac: device.mac, name: device.name, model: device.model, type: device.type },
+                    };
                 }
                 const applied = await client.startCableTest(switchMac, ports, siteId, customHeaders);
                 return applied;

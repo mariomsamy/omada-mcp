@@ -197,7 +197,7 @@ async function run(client: SwitchPortsClient, args: Input): Promise<unknown> {
 }
 
 export function registerSetSwitchPortsTool(server: McpServer, client: SwitchPortsClient): void {
-    const handler = wrapMutationToolHandler<typeof inputSchema.shape>(
+    const handler = wrapMutationToolHandler<z.output<typeof inputSchema>>(
         'setSwitchPorts',
         ({ switchMac, siteId }, result, mode) => ({
             action: 'set-switch-ports',

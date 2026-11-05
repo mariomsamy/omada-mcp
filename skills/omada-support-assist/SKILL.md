@@ -30,7 +30,7 @@ Read-only: `OMADA_CAPABILITY_PROFILE=safe-read` with
 Audit logs live in the `logs` category, which the plain `safe-read`
 defaults do not include.
 
-Tool names are as registered by safe-omada-mcp; your client may prefix
+Tool names are as registered by omada-mcp; your client may prefix
 them. In compact catalog mode use `callOperation`.
 
 ## Tools

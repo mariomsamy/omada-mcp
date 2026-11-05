@@ -4,7 +4,8 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { OPENAPI_BODY_KEYS, objectPayloadSchema, resourceIdSchema, strictPayload } from './portedToolShared.js';
+import { OPENAPI_NESTED_KEYS } from '../utils/openapiNestedKeys.js';
+import { diffFields, OPENAPI_BODY_KEYS, objectPayloadSchema, resourceIdSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     wlanId: resourceIdSchema('wlanId').describe('WLAN group ID from getWlanGroupList.'),
@@ -14,7 +15,8 @@ const inputSchema = siteInputSchema.extend({
             clientRateLimit: objectPayloadSchema('Client rate limit (profileId or customSetting).', OPENAPI_BODY_KEYS.ssidRateLimitEntry).optional(),
             ssidRateLimit: objectPayloadSchema('SSID rate limit (profileId or customSetting).', OPENAPI_BODY_KEYS.ssidRateLimitEntry).optional(),
         },
-        OPENAPI_BODY_KEYS.ssidRateLimit
+        OPENAPI_BODY_KEYS.ssidRateLimit,
+        OPENAPI_NESTED_KEYS.ssidRateLimit
     ).describe('update-rate-limit request body per the official Omada Open API schema.'),
     dryRun: z
         .boolean()
@@ -48,7 +50,7 @@ export function registerUpdateSsidRateLimitTool(server: McpServer, client: Omada
             async ({ wlanId, ssidId, payload, siteId, customHeaders, dryRun }) => {
                 const before = await client.getSsidDetail(wlanId, ssidId, siteId, customHeaders);
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, before, plannedConfig: payload };
+                    return { accepted: true, dryRun: true, before, plannedConfig: payload, diff: diffFields(before, payload) };
                 }
                 const applied = await client.updateSsidSection(wlanId, ssidId, 'rate-limit', payload, siteId, customHeaders);
                 return { before, applied };

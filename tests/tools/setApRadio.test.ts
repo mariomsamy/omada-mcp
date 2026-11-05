@@ -108,7 +108,7 @@ describe('tools/setApRadio', () => {
         [{ channel: 100 }, 'mapping'],
         [{ channel: 6, channelWidthMHz: 80 }, 'combination'],
         [{ txPowerLevel: 3 }, 'Invalid input'],
-        [{ channel: 0 }, 'greater than 0'],
+        [{ channel: 0 }, 'expected number to be >0'],
     ])('rejects unsupported or empty controls %j', async (changes, error) => {
         await expect(call(changes)).rejects.toThrow(error);
         expect(client.setRadiosConfig).not.toHaveBeenCalled();

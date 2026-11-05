@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.0 - 2026-11-05
+
+Security and audit follow-up release of the unified server.
+
+- migrate to zod 4.6.7, fixing GHSA-mrhx-c7xc-m3w5; `npm audit --omit=dev` reports 0 vulnerabilities; CI and publish now run `npm audit --omit=dev --audit-level=high`
+- webhook destinations of the log/audit notification tools are resolved and refused when any address is private, loopback or link-local; new optional `OMADA_WEBHOOK_ALLOWED_HOSTS` allowlist
+- nested request-body key allowlists generated from the OpenAPI schemas (`dhcpSettingsVO`, `lanNetworkIpv6Config`, `wanPortIpv4Setting`, rate-limit and RF-planning `customSetting`, ...); update previews include a field-level before/planned `diff`
+- read-only preflights for `createSsid` (WLAN group), `adoptDevice` (pending list), `startFirmwareUpgrade` and `startCableTest` (device in site)
+- fix `setDeviceLed`: it used the undocumented `/devices/{mac}/led-setting` route; it now uses the documented AP/switch/gateway `general-config` route after confirming the device type
+- info-level logs no longer contain full tool arguments or client MACs/IPs in request URLs; full arguments are debug-only; log retention documented
+- the event-type `key` in log/audit notification settings and log entries is no longer masked; other `key` fields stay masked
+- `OMADA_TOOL_CATEGORIES` overriding `OMADA_CAPABILITY_PROFILE` now logs a warning and reports profile `custom`
+- table-driven loopback stub-controller test over all 89 write tools (dry run sends no mutating request; apply sends the documented method and path); per-tool tests assert the catalog-forced `destructiveHint`
+- rename leftover "Safe Omada MCP" / `safe-omada-mcp` references to `omada-mcp` (MCP server name, image label, docs) and point repository links at `mariomsamy/omada-mcp`; document Docker hardening flags (`--read-only --cap-drop=ALL --security-opt no-new-privileges`), `MCP_HTTP_BEARER_TOKEN` and `confirmWebhookChange`
+
 ## 0.19.0-rc.1 - 2026-10-24
 
 - default all writes to preview, separate explicit recovery permissions, and distinguish submitted changes from verified readback

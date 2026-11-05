@@ -11,7 +11,7 @@ description: |
   (omada-safe-change), for audits (omada-network-audit) and for
   portal-not-loading troubleshooting of one client
   (omada-wifi-troubleshoot).
-  Note: safe-omada-mcp cannot create or edit captive portals (hotspot
+  Note: omada-mcp cannot create or edit captive portals (hotspot
   portal tools are not implemented); the portal itself is created in the
   controller UI and verified here.
 ---

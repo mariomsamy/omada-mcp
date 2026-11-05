@@ -4,19 +4,21 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { OPENAPI_BODY_KEYS, objectPayloadSchema } from './portedToolShared.js';
+import { OPENAPI_NESTED_KEYS } from '../utils/openapiNestedKeys.js';
+import { diffFields, OPENAPI_BODY_KEYS, objectPayloadSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
-    payload: z
-        .object({
+    payload: strictPayload(
+        {
             mode: z.union([z.literal(0), z.literal(1)]).describe('0: auto configuration, 1: custom configuration.'),
             customSetting: objectPayloadSchema(
                 'Custom deploy settings (required by the controller when mode is 1).',
                 OPENAPI_BODY_KEYS.rfPlanningCustomSetting
             ).optional(),
-        })
-        .strict()
-        .describe('modifyRFPlanningDeployConfig request body.'),
+        },
+        ['mode', 'customSetting'],
+        OPENAPI_NESTED_KEYS.rfPlanningConfig
+    ).describe('modifyRFPlanningDeployConfig request body.'),
     dryRun: z
         .boolean()
         .optional()
@@ -52,7 +54,7 @@ export function registerUpdateRfPlanningConfigTool(server: McpServer, client: Om
             async ({ payload, siteId, customHeaders, dryRun }) => {
                 const before = await client.getRadioFrequencyPlanningConfig(siteId, customHeaders);
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, before, plannedConfig: payload };
+                    return { accepted: true, dryRun: true, before, plannedConfig: payload, diff: diffFields(before, payload) };
                 }
                 const applied = await client.updateRfPlanningConfig(payload, siteId, customHeaders);
                 return { before, applied };

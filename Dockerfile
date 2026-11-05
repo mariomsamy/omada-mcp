@@ -16,9 +16,9 @@ RUN npm run build
 FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS runtime
 
 # OCI metadata labels
-LABEL org.opencontainers.image.title="Safe Omada MCP"
+LABEL org.opencontainers.image.title="Omada MCP"
 LABEL org.opencontainers.image.description="Security-focused MCP server for TP-Link Omada Open API workflows"
-LABEL org.opencontainers.image.authors="Internal platform team"
+LABEL org.opencontainers.image.authors="mariomsamy and contributors (see NOTICE.md)"
 LABEL org.opencontainers.image.url="https://github.com/mariomsamy/omada-mcp"
 LABEL org.opencontainers.image.source="https://github.com/mariomsamy/omada-mcp"
 LABEL org.opencontainers.image.documentation="https://github.com/mariomsamy/omada-mcp#readme"

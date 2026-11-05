@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
+import { configureWebhookPolicy } from '../../src/tools/portedToolShared.js';
 import { registerUpdateLogNotificationSettingsTool } from '../../src/tools/updateLogNotificationSettings.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/updateLogNotificationSettings', () => {
     let mockClient: OmadaClient;
@@ -14,6 +16,8 @@ describe('tools/updateLogNotificationSettings', () => {
     const parseText = (result: CallToolResult): Record<string, unknown> => JSON.parse((result.content[0] as { text: string }).text);
 
     beforeEach(() => {
+        // Never touch real DNS in tests: every hostname resolves to a public documentation address.
+        configureWebhookPolicy({ allowedHosts: undefined, resolve: async () => ['93.184.216.34'] });
         const mockServer = {
             registerTool: vi.fn((name, config, handler) => {
                 registeredName = name;
@@ -34,9 +38,11 @@ describe('tools/updateLogNotificationSettings', () => {
         registerUpdateLogNotificationSettingsTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('updateLogNotificationSettings');
-        expect(registeredConfig?.annotations?.destructiveHint).toBe(true);
+        expect(await catalogAnnotations('updateLogNotificationSettings')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {

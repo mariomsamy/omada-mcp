@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { deviceMacSchema, siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
+import { requireDeviceByMac } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     deviceMac: deviceMacSchema.describe('MAC address of the pending device to adopt.'),
@@ -39,8 +40,20 @@ export function registerAdoptDeviceTool(server: McpServer, client: OmadaClient):
                 };
             },
             async ({ deviceMac, username, password, siteId, customHeaders, dryRun }) => {
+                // Preflight (read only): only a device in the site's pending list can be adopted.
+                const pending = await requireDeviceByMac(
+                    () => client.listPendingDevices(siteId, customHeaders),
+                    deviceMac,
+                    'is not in the pending (adoptable) device list of the selected site (see listPendingDevices)'
+                );
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, deviceMac, credentialsProvided: username !== undefined || password !== undefined };
+                    return {
+                        accepted: true,
+                        dryRun: true,
+                        deviceMac,
+                        pendingDevice: { mac: pending.mac, name: pending.name, model: pending.model },
+                        credentialsProvided: username !== undefined || password !== undefined,
+                    };
                 }
                 const applied = await client.adoptDevice(
                     deviceMac,

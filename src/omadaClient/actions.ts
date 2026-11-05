@@ -7,6 +7,9 @@ import type { SiteOperations } from './site.js';
  * Low-risk operational actions backed by the official Omada Open API.
  * These are intentionally limited to device/client actions with clear operator intent.
  */
+/** Device families that expose ledSetting in a documented general-config route. */
+export type DeviceLedType = 'ap' | 'switch' | 'gateway';
+
 export class ActionOperations {
     constructor(
         private readonly request: RequestHandler,
@@ -42,10 +45,23 @@ export class ActionOperations {
         return this.request.ensureSuccess(response);
     }
 
-    public async setDeviceLed(deviceMac: string, ledSetting: number, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+    /**
+     * Set one device's LED through its documented general-config route (03-device.json):
+     * PATCH aps/{apMac}/general-config (modifyGeneralConfig_2), switches/{switchMac}/general-config
+     * (modifyGeneralConfig) or gateways/{gatewayMac}/general-config (modifyGeneralConfig_1).
+     * There is no device-type-agnostic LED route in the Open API.
+     */
+    public async setDeviceLed(
+        deviceMac: string,
+        ledSetting: number,
+        deviceType: DeviceLedType,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
-        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/devices/${encodeURIComponent(deviceMac)}/led-setting`);
-        const response = await this.request.post<OmadaApiResponse<unknown>>(path, { ledSetting }, customHeaders);
+        const collection = { ap: 'aps', switch: 'switches', gateway: 'gateways' }[deviceType];
+        const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/${collection}/${encodeURIComponent(deviceMac)}/general-config`);
+        const response = await this.request.patch<OmadaApiResponse<unknown>>(path, { ledSetting }, customHeaders);
         return this.request.ensureSuccess(response);
     }
 }

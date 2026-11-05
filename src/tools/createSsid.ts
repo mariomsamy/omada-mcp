@@ -4,7 +4,8 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { OPENAPI_BODY_KEYS, objectPayloadSchema, resourceIdSchema, strictPayload } from './portedToolShared.js';
+import { OPENAPI_NESTED_KEYS } from '../utils/openapiNestedKeys.js';
+import { OPENAPI_BODY_KEYS, objectPayloadSchema, requireExistingRecord, resourceIdSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     wlanId: resourceIdSchema('wlanId').describe('WLAN group ID from getWlanGroupList.'),
@@ -22,7 +23,8 @@ const inputSchema = siteInputSchema.extend({
             ppskSetting: objectPayloadSchema('PPSK settings.', OPENAPI_BODY_KEYS.ssidPpskSetting).optional(),
             vlanSetting: objectPayloadSchema('VLAN settings.', OPENAPI_BODY_KEYS.ssidVlanSetting).optional(),
         },
-        OPENAPI_BODY_KEYS.createSsid
+        OPENAPI_BODY_KEYS.createSsid,
+        OPENAPI_NESTED_KEYS.createSsid
     ).describe('createSsid request body (CreateSsidOpenApiVO); pskSetting/entSetting and other nested fields follow the official schema.'),
     dryRun: z
         .boolean()
@@ -54,8 +56,10 @@ export function registerCreateSsidTool(server: McpServer, client: OmadaClient): 
                 };
             },
             async ({ wlanId, payload, siteId, customHeaders, dryRun }) => {
+                // Preflight (read only): the WLAN group must exist in the selected site.
+                const wlanGroup = await requireExistingRecord(() => client.getWlanGroupList(siteId, customHeaders), wlanId, 'WLAN group', ['wlanId']);
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, plannedConfig: payload };
+                    return { accepted: true, dryRun: true, wlanGroup: { wlanId, name: wlanGroup.name }, plannedConfig: payload };
                 }
                 const applied = await client.createSsid(wlanId, payload, siteId, customHeaders);
                 return applied;

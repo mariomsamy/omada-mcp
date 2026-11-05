@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerCancelRfOptimizationTool } from '../../src/tools/cancelRfOptimization.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/cancelRfOptimization', () => {
     let mockClient: OmadaClient;
@@ -27,9 +28,11 @@ describe('tools/cancelRfOptimization', () => {
         registerCancelRfOptimizationTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('cancelRfOptimization');
-        expect(registeredConfig?.annotations?.destructiveHint).toBeUndefined();
+        expect(await catalogAnnotations('cancelRfOptimization')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {
@@ -58,7 +61,7 @@ describe('tools/cancelRfOptimization', () => {
                 (caught: unknown) => caught
             );
         expect(error).toBeInstanceOf(z.ZodError);
-        expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['siteId'], code: 'invalid_string' }));
+        expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['siteId'], code: 'invalid_format' }));
         for (const operation of Object.values(mockClient)) expect(operation).not.toHaveBeenCalled();
     });
 });

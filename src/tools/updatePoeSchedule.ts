@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { poeScheduleSchema, requireExistingRecord, resourceIdSchema } from './portedToolShared.js';
+import { diffFields, poeScheduleSchema, requireExistingRecord, resourceIdSchema } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     poeScheduleId: resourceIdSchema('poeScheduleId').describe('PoE schedule ID.'),
@@ -44,7 +44,7 @@ export function registerUpdatePoeScheduleTool(server: McpServer, client: OmadaCl
             async ({ poeScheduleId, schedule, siteId, customHeaders, dryRun }) => {
                 const before = await requireExistingRecord(() => client.getPoeScheduleList(siteId, customHeaders), poeScheduleId, 'PoE schedule');
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, before, plannedConfig: schedule };
+                    return { accepted: true, dryRun: true, before, plannedConfig: schedule, diff: diffFields(before, schedule) };
                 }
                 const applied = await client.modifyPoeSchedule(poeScheduleId, schedule, siteId, customHeaders);
                 return { before, applied };

@@ -1,6 +1,6 @@
-# Safe Omada MCP Architecture
+# Omada MCP Architecture
 
-`safe-omada-mcp` is an OpenAPI-first MCP server for TP-Link Omada environments.
+`omada-mcp` is an OpenAPI-first MCP server for TP-Link Omada environments.
 
 ## Baseline
 

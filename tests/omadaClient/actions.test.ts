@@ -5,6 +5,7 @@ import { ActionOperations } from '../../src/omadaClient/actions.js';
 describe('omadaClient/actions', () => {
     const mockRequest = {
         post: vi.fn(),
+        patch: vi.fn(),
         ensureSuccess: vi.fn((value) => value.result),
     };
     const mockSite = {
@@ -36,17 +37,32 @@ describe('omadaClient/actions', () => {
         expect(mockRequest.post).toHaveBeenNthCalledWith(2, '/api/sites/site-1/clients/AA%3ABB%3ACC%3ADD%3AEE%3AFF/unblock', {}, undefined);
     });
 
-    it('reconnects clients and updates LED state through official action endpoints', async () => {
+    it('reconnects clients and updates LED state through the documented general-config routes', async () => {
         mockRequest.post.mockResolvedValue({ errorCode: 0, result: { accepted: true } });
+        mockRequest.patch.mockResolvedValue({ errorCode: 0, result: { accepted: true } });
 
         await actions.reconnectClient('AA:BB:CC:DD:EE:FF', 'site-1');
-        await actions.setDeviceLed('AA:BB:CC:DD:EE:FF', 2, 'site-1');
+        await actions.setDeviceLed('AA:BB:CC:DD:EE:FF', 2, 'ap', 'site-1');
+        await actions.setDeviceLed('AA:BB:CC:DD:EE:FF', 0, 'switch', 'site-1');
+        await actions.setDeviceLed('AA:BB:CC:DD:EE:FF', 1, 'gateway', 'site-1');
 
-        expect(mockRequest.post).toHaveBeenNthCalledWith(1, '/api/sites/site-1/clients/AA%3ABB%3ACC%3ADD%3AEE%3AFF/reconnect', {}, undefined);
-        expect(mockRequest.post).toHaveBeenNthCalledWith(
-            2,
-            '/api/sites/site-1/devices/AA%3ABB%3ACC%3ADD%3AEE%3AFF/led-setting',
+        expect(mockRequest.post).toHaveBeenCalledExactlyOnceWith('/api/sites/site-1/clients/AA%3ABB%3ACC%3ADD%3AEE%3AFF/reconnect', {}, undefined);
+        expect(mockRequest.patch).toHaveBeenNthCalledWith(
+            1,
+            '/api/sites/site-1/aps/AA%3ABB%3ACC%3ADD%3AEE%3AFF/general-config',
             { ledSetting: 2 },
+            undefined
+        );
+        expect(mockRequest.patch).toHaveBeenNthCalledWith(
+            2,
+            '/api/sites/site-1/switches/AA%3ABB%3ACC%3ADD%3AEE%3AFF/general-config',
+            { ledSetting: 0 },
+            undefined
+        );
+        expect(mockRequest.patch).toHaveBeenNthCalledWith(
+            3,
+            '/api/sites/site-1/gateways/AA%3ABB%3ACC%3ADD%3AEE%3AFF/general-config',
+            { ledSetting: 1 },
             undefined
         );
     });

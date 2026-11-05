@@ -372,6 +372,7 @@ import { registerListUpgradeFirmwaresTool } from './listUpgradeFirmwares.js';
 import { registerListUpgradeOverviewFirmwaresTool } from './listUpgradeOverviewFirmwares.js';
 import { registerListWireguardTool } from './listWireguard.js';
 import { registerListWireguardPeersTool } from './listWireguardPeers.js';
+import { configureWebhookPolicy } from './portedToolShared.js';
 import { registerRebootDeviceTool } from './rebootDevice.js';
 import { registerReconnectClientTool } from './reconnectClient.js';
 import { registerResetLogNotificationSettingsTool } from './resetLogNotificationSettings.js';
@@ -946,6 +947,7 @@ export function registerAllTools(
     activeCategories?: Map<ToolCategory, Set<ToolPermission>>,
     options: CatalogOptions = {}
 ): void {
+    configureWebhookPolicy({ allowedHosts: options.webhookAllowedHosts });
     const registered = new Set<ToolEntry['fn']>();
     const catalog: CatalogTool[] = [];
     for (const entry of TOOL_REGISTRY) {

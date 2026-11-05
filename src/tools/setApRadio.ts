@@ -29,7 +29,7 @@ export function parseAvailableChannels(value: unknown): z.infer<typeof available
 
 /** Pick documented writable fields only; absent/null bands are unsupported. */
 export function projectRadioConfig(value: unknown): ApRadiosConfig {
-    const source = z.record(z.unknown()).parse(value);
+    const source = z.record(z.string(), z.unknown()).parse(value);
     const result: ApRadiosConfig = {};
     for (const { key } of Object.values(bands)) {
         if (source[key] !== undefined && source[key] !== null) result[key] = apRadioSettingSchema.strip().parse(source[key]);

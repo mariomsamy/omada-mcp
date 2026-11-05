@@ -60,21 +60,21 @@ const apGeneralConfigSchema = z
 const dhcpipsettingentitySchema = z
     .object({
         fallback: z.boolean().optional(),
-        fallbackIp: z.string().ip({ version: 'v4' }).optional(),
-        fallbackMask: z.string().ip({ version: 'v4' }).optional(),
-        fallbackGate: z.string().ip({ version: 'v4' }).optional(),
+        fallbackIp: z.ipv4().optional(),
+        fallbackMask: z.ipv4().optional(),
+        fallbackGate: z.ipv4().optional(),
         useFixedAddr: z.boolean().optional(),
         netId: z.string().trim().min(1).optional(),
-        dhcpIp: z.string().ip({ version: 'v4' }).optional(),
+        dhcpIp: z.ipv4().optional(),
     })
     .strict();
 const staticipsettingentitySchema = z
     .object({
-        configIp: z.string().ip({ version: 'v4' }).optional(),
-        configMask: z.string().ip({ version: 'v4' }).optional(),
-        configGate: z.string().ip({ version: 'v4' }).optional(),
-        preferredDNS: z.string().ip({ version: 'v4' }).optional(),
-        alternateDNS: z.string().ip({ version: 'v4' }).optional(),
+        configIp: z.ipv4().optional(),
+        configMask: z.ipv4().optional(),
+        configGate: z.ipv4().optional(),
+        preferredDNS: z.ipv4().optional(),
+        alternateDNS: z.ipv4().optional(),
     })
     .strict();
 const apIPSettingSchema = z
@@ -87,17 +87,17 @@ const apIPSettingSchema = z
 const dynamicipv6settingentitySchema = z
     .object({
         dnsMode: z.number().int().min(0).max(1),
-        priDns: z.string().ip({ version: 'v6' }).optional(),
-        sndDns: z.string().ip({ version: 'v6' }).optional(),
+        priDns: z.ipv6().optional(),
+        sndDns: z.ipv6().optional(),
     })
     .strict();
 const staticipv6settingentitySchema = z
     .object({
-        ipv6Addr: z.string().ip({ version: 'v6' }),
+        ipv6Addr: z.ipv6(),
         prefixLen: z.number().int().min(0).max(128),
-        defaultGate: z.string().ip({ version: 'v6' }).optional(),
-        priDns: z.string().ip({ version: 'v6' }).optional(),
-        sndDns: z.string().ip({ version: 'v6' }).optional(),
+        defaultGate: z.ipv6().optional(),
+        priDns: z.ipv6().optional(),
+        sndDns: z.ipv6().optional(),
     })
     .strict();
 const apIPv6SettingSchema = z
@@ -147,11 +147,11 @@ const apVoipVlanSettingOpenApiVOSchema = z
         lanNetworkId: z.string().trim().min(1).optional(),
         voipBridgeVlan: z.number().int().min(1).max(4090).optional(),
         ipType: z.number().int().min(0).max(1).optional(),
-        ip: z.string().ip({ version: 'v4' }).optional(),
-        ipMask: z.string().ip({ version: 'v4' }).optional(),
-        ipGateway: z.string().ip({ version: 'v4' }).optional(),
-        ipDns1: z.string().ip({ version: 'v4' }).optional(),
-        ipDns2: z.string().ip({ version: 'v4' }).optional(),
+        ip: z.ipv4().optional(),
+        ipMask: z.ipv4().optional(),
+        ipGateway: z.ipv4().optional(),
+        ipDns1: z.ipv4().optional(),
+        ipDns2: z.ipv4().optional(),
     })
     .strict();
 const apServicesConfigOpenApiVOSchema = z

@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { deviceMacSchema, siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
+import { requireDeviceByMac } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     deviceMac: deviceMacSchema.describe('MAC address of the device to upgrade.'),
@@ -40,7 +41,16 @@ export function registerStartFirmwareUpgradeTool(server: McpServer, client: Omad
                 };
             },
             async ({ deviceMac, siteId, customHeaders, dryRun }) => {
-                const before = await client.getFirmwareInfo(deviceMac, siteId, customHeaders);
+                // Preflight (read only): the device must be known to the selected site.
+                const device = await requireDeviceByMac(
+                    () => client.listDevices(siteId, customHeaders),
+                    deviceMac,
+                    'was not found in the selected site (see listDevices)'
+                );
+                const before = {
+                    device: { mac: device.mac, name: device.name, model: device.model, status: device.status },
+                    firmware: await client.getFirmwareInfo(deviceMac, siteId, customHeaders),
+                };
                 if (dryRun) {
                     return { accepted: true, dryRun: true, before };
                 }

@@ -115,6 +115,7 @@ const flushTasks = () => new Promise((resolve) => setImmediate(resolve));
 
 const baseConfig: EnvironmentConfig = {
     capabilityProfile: 'safe-read',
+    requestedCapabilityProfile: 'safe-read',
     baseUrl: 'https://controller.local',
     clientId: 'client-id',
     clientSecret: 'secret',

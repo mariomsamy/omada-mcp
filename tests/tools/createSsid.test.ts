@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerCreateSsidTool } from '../../src/tools/createSsid.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/createSsid', () => {
     let mockClient: OmadaClient;
@@ -23,13 +24,16 @@ describe('tools/createSsid', () => {
         } as unknown as McpServer;
         mockClient = {
             createSsid: vi.fn().mockResolvedValue({ ssidId: 'ssid-1' }),
+            getWlanGroupList: vi.fn().mockResolvedValue([{ wlanId: 'wlan-1', name: 'Default', primary: true }]),
         } as unknown as OmadaClient;
         registerCreateSsidTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('createSsid');
-        expect(registeredConfig?.annotations?.destructiveHint).toBeUndefined();
+        expect(await catalogAnnotations('createSsid')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {
@@ -94,5 +98,22 @@ describe('tools/createSsid', () => {
         expect(error).toBeInstanceOf(z.ZodError);
         expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['payload', 'name'], code: 'too_small' }));
         for (const operation of Object.values(mockClient)) expect(operation).not.toHaveBeenCalled();
+    });
+
+    it('preflights the WLAN group and refuses an unknown wlanId (L6)', async () => {
+        vi.mocked(mockClient.getWlanGroupList).mockResolvedValue([{ wlanId: 'other' }]);
+        await expect(
+            toolHandler(
+                {
+                    siteId: 'site-1',
+                    wlanId: 'wlan-1',
+                    payload: { name: 'Guest', deviceType: 1, band: 3, guestNetEnable: true, security: 0, broadcast: true, vlanEnable: false },
+                    dryRun: false,
+                },
+                { sessionId: 's1' }
+            )
+        ).rejects.toThrow('WLAN group wlan-1 was not found in the selected site');
+        expect(mockClient.getWlanGroupList).toHaveBeenCalledWith('site-1', undefined);
+        expect(mockClient.createSsid).not.toHaveBeenCalled();
     });
 });

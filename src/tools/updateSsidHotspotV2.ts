@@ -4,12 +4,13 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { OPENAPI_BODY_KEYS, resourceIdSchema, strictPayload } from './portedToolShared.js';
+import { OPENAPI_NESTED_KEYS } from '../utils/openapiNestedKeys.js';
+import { diffFields, OPENAPI_BODY_KEYS, resourceIdSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     wlanId: resourceIdSchema('wlanId').describe('WLAN group ID from getWlanGroupList.'),
     ssidId: resourceIdSchema('ssidId').describe('SSID ID from getSsidList.'),
-    payload: strictPayload({ hotspotV2Enable: z.boolean() }, OPENAPI_BODY_KEYS.ssidHotspotV2).describe(
+    payload: strictPayload({ hotspotV2Enable: z.boolean() }, OPENAPI_BODY_KEYS.ssidHotspotV2, OPENAPI_NESTED_KEYS.ssidHotspotV2).describe(
         'update-hotspotv2 request body per the official Omada Open API schema.'
     ),
     dryRun: z
@@ -44,7 +45,7 @@ export function registerUpdateSsidHotspotV2Tool(server: McpServer, client: Omada
             async ({ wlanId, ssidId, payload, siteId, customHeaders, dryRun }) => {
                 const before = await client.getSsidDetail(wlanId, ssidId, siteId, customHeaders);
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, before, plannedConfig: payload };
+                    return { accepted: true, dryRun: true, before, plannedConfig: payload, diff: diffFields(before, payload, ['hotspotV2Setting']) };
                 }
                 const applied = await client.updateSsidSection(wlanId, ssidId, 'hotspotv2', payload, siteId, customHeaders);
                 return { before, applied };

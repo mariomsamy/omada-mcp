@@ -7,6 +7,7 @@ const baseConfig = {
     useHttp: false,
     unsafeEnableHttp: false,
     capabilityProfile: 'safe-read',
+    requestedCapabilityProfile: 'safe-read',
     logLevel: 'info',
     logFormat: 'plain',
     baseUrl: 'https://controller.local',
@@ -86,7 +87,7 @@ describe('src/index main entry', () => {
         expect(startStdioServer).toHaveBeenCalledWith(expect.objectContaining({ client: 'instance' }), new Map(), baseConfig);
         expect(startHttpServer).not.toHaveBeenCalled();
         expect(loggerInfo).toHaveBeenCalledWith(
-            'Starting Safe Omada MCP server',
+            'Starting Omada MCP server',
             expect.objectContaining({ name: 'omada-mcp', version: expect.any(String), mode: 'stdio' })
         );
         expect(loggerInfo).toHaveBeenCalledWith('Loaded Omada configuration', expect.objectContaining({ omadacId: 'omada-1' }));

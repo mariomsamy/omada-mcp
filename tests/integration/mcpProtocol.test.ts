@@ -50,7 +50,7 @@ async function expectToolError(client: Client, name: string, args: Record<string
 describe('MCP protocol over in-memory transports', () => {
     it('negotiates resources and advertises the actual default mutation schema', async () => {
         const client = await connect('clients:rw');
-        expect(client.getServerVersion()?.name).toBe('safe-omada-mcp');
+        expect(client.getServerVersion()?.name).toBe('omada-mcp');
         expect(await client.listResources()).toEqual({ resources: [] });
         const { tools } = await client.listTools();
         const block = tools.find((tool) => tool.name === 'blockClient');

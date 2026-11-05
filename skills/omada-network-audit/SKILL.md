@@ -41,7 +41,7 @@ audit also needs `sites`, `logs`, `wireless-*`, `network-*`,
 never registers a write tool and never includes recovery. If a section's
 tools are missing, mark that section UNKNOWN instead of guessing.
 
-Tool names are as registered by safe-omada-mcp. Your client may prefix
+Tool names are as registered by omada-mcp. Your client may prefix
 them. In compact catalog mode use `searchOperations` /
 `describeOperation` / `callOperation`.
 

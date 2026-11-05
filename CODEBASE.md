@@ -1,4 +1,4 @@
-# Codebase Guide — Safe Omada MCP
+# Codebase Guide — Omada MCP
 
 A developer map of the repository: where things live, how they connect, and how to add new functionality.
 

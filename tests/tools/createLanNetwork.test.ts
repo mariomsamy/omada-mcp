@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerCreateLanNetworkTool } from '../../src/tools/createLanNetwork.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/createLanNetwork', () => {
     let mockClient: OmadaClient;
@@ -27,9 +28,11 @@ describe('tools/createLanNetwork', () => {
         registerCreateLanNetworkTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('createLanNetwork');
-        expect(registeredConfig?.annotations?.destructiveHint).toBeUndefined();
+        expect(await catalogAnnotations('createLanNetwork')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {

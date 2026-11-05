@@ -4,7 +4,7 @@ import http from 'node:http';
 import type { EnvironmentConfig, OmadaConnectionConfig } from '../config.js';
 import { normalizePath, resolvePort } from '../utils/config-validations.js';
 import { logger } from '../utils/logger.js';
-import { isLikelySensitiveString, isSensitiveKey, maskValue } from '../utils/redact.js';
+import { isLikelySensitiveString, isSensitiveField, isSensitiveKey, maskValue } from '../utils/redact.js';
 import type { StreamTransportState } from './stream.js';
 import { closeAllStreamSessions, handleStreamRequest } from './stream.js';
 
@@ -143,7 +143,7 @@ function sanitizeHeaderValue(key: string, value: string): string {
     return typeof sanitized === 'string' ? sanitized : String(sanitized);
 }
 
-function sanitizePayload(payload: unknown): unknown {
+function sanitizePayload(payload: unknown, parentKey?: string): unknown {
     if (payload === null || payload === undefined) {
         return payload;
     }
@@ -153,13 +153,14 @@ function sanitizePayload(payload: unknown): unknown {
     }
 
     if (Array.isArray(payload)) {
-        return payload.map((entry) => sanitizePayload(entry));
+        return payload.map((entry) => sanitizePayload(entry, parentKey));
     }
 
     if (typeof payload === 'object') {
+        const record = payload as Record<string, unknown>;
         const sanitized: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(payload)) {
-            sanitized[key] = isSensitiveKey(key) ? maskValue(value) : sanitizePayload(value);
+        for (const [key, value] of Object.entries(record)) {
+            sanitized[key] = isSensitiveField(key, parentKey, record) ? maskValue(value) : sanitizePayload(value, key);
         }
         return sanitized;
     }

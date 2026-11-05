@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     initLogger(config.logLevel, config.logFormat, useStderr);
 
     // Startup banner
-    logger.info('Starting Safe Omada MCP server', {
+    logger.info('Starting Omada MCP server', {
         name: pkg.name,
         version: pkg.version,
         description: pkg.description,
@@ -39,6 +39,7 @@ async function main(): Promise<void> {
         strictSsl: config.strictSsl,
         requestTimeout: config.requestTimeout ?? null,
         capabilityProfile: config.capabilityProfile,
+        requestedCapabilityProfile: config.requestedCapabilityProfile,
     });
 
     if (config.useHttp) {

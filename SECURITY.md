@@ -12,7 +12,7 @@
 
 Use GitHub's private vulnerability reporting:
 
-1. Go to the [Security tab](https://github.com/gaspareduard/Omada-mcp/security) of this repository.
+1. Go to the [Security tab](https://github.com/mariomsamy/omada-mcp/security) of this repository.
 2. Click **"Report a vulnerability"**.
 3. Describe the issue, steps to reproduce, and potential impact.
 
@@ -46,10 +46,10 @@ This server is designed with a defense-in-depth approach:
 
 See [docs/security-model.md](./docs/security-model.md) for the full security design.
 
-## 0.19 release-candidate dependency limitation
+## Dependency audit status (1.0.0)
 
-The compatible dependency update clears the previously reported critical runtime advisories, but `zod@3.25.76` remains affected according to [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5): oversized collections can exhaust memory during validation. The advisory's first patched version is 4.6.6; no Zod 3 patch was available during this review. A Zod 4 migration needs schema/SDK regression testing and is not represented as fixed by this candidate.
+Version 1.0.0 migrates the runtime to `zod@4.6.7`, which fixes [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (memory exhaustion while validating oversized constrained collections). `npm audit --omit=dev` reports 0 vulnerabilities, and CI and the publish workflow now fail on any high or critical production advisory (`npm audit --omit=dev --audit-level=high`).
 
-Use trusted local stdio clients and keep HTTP restricted to isolated lab use. These boundaries reduce exposure but do not eliminate resource-exhaustion risk from oversized local requests or controller responses. Re-run `npm audit --omit=dev` before promotion and track the schema migration as an unresolved gate.
+The full development audit still reports five high-severity entries, all from copies of `zod@3` inside the optional MCP Inspector dependency tree (`@modelcontextprotocol/inspector*`, `@mcp-ui/client`). Inspector is a development-only tool and is excluded from production installs and the container image. Its upgrade is tracked separately.
 
-The full development audit also reports four high-severity entries through the optional MCP Inspector dependency tree (five high entries including Zod). Inspector is a development-only tool, excluded from production installs. Its major-version upgrade is separate from the compatible runtime update. Both audits contain zero critical entries at this validation point.
+Payload size (64 KB) and depth (8) caps and the 1 MB HTTP body cap remain in place as defence in depth.

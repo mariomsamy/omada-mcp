@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { OPENAPI_BODY_KEYS, resourceIdSchema, strictPayload } from './portedToolShared.js';
+import { diffFields, OPENAPI_BODY_KEYS, resourceIdSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     wlanId: resourceIdSchema('wlanId').describe('WLAN group ID from getWlanGroupList.'),
@@ -45,7 +45,7 @@ export function registerUpdateSsidRateControlTool(server: McpServer, client: Oma
             async ({ wlanId, ssidId, payload, siteId, customHeaders, dryRun }) => {
                 const before = await client.getSsidDetail(wlanId, ssidId, siteId, customHeaders);
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, before, plannedConfig: payload };
+                    return { accepted: true, dryRun: true, before, plannedConfig: payload, diff: diffFields(before, payload, ['rateControl']) };
                 }
                 const applied = await client.updateSsidSection(wlanId, ssidId, 'rate-control', payload, siteId, customHeaders);
                 return { before, applied };

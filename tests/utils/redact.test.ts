@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { isLikelySensitiveString, isSensitiveKey, maskValue, redactSecrets, redactSecretsInText } from '../../src/utils/redact.js';
+import {
+    isLikelySensitiveString,
+    isSensitiveField,
+    isSensitiveKey,
+    maskValue,
+    redactSecrets,
+    redactSecretsInText,
+    scrubPersonalData,
+    scrubPersonalDataDeep,
+} from '../../src/utils/redact.js';
 
 describe('redact', () => {
     describe('isSensitiveKey', () => {
@@ -154,5 +163,51 @@ describe('extended secret key coverage', () => {
         expect(redactSecretsInText('{"md5Key":"k1","name":"ospf"}')).toBe('{"md5Key":"********","name":"ospf"}');
         expect(redactSecretsInText('pinCode: 1234, enable: true')).toBe('pinCode: "********", enable: true');
         expect(redactSecretsInText('Controller rejected the change')).toBe('Controller rejected the change');
+    });
+
+    describe('key scoping by parent (L2)', () => {
+        it('keeps the event-type key readable inside log and audit notification collections', () => {
+            const settings = {
+                logNotifications: [{ key: 'EVENT_AP_DISCONNECTED', shortMsg: 'AP disconnected', alert: true, email: false }],
+                alertNotifications: [{ key: 'ALERT_WAN_DOWN', enable: true }],
+                eventNotifications: [{ key: 'EVENT_CLIENT_JOIN', enable: false }],
+                auditLogNotifications: [{ key: 'AUDIT_ADMIN', webhook: true }],
+            };
+            expect(redactSecrets(settings)).toEqual(settings);
+        });
+
+        it('keeps the log key readable in event and alert log entries', () => {
+            const entry = { id: 'log1', key: 'EVENT_X', module: 'System', content: 'text', time: 1 };
+            expect(redactSecrets({ data: [entry] })).toEqual({ data: [entry] });
+        });
+
+        it('still masks a bare key elsewhere and secret fields inside notification entries', () => {
+            expect(redactSecrets({ vrrp: { authentication: 1, key: 'vrrp-secret' } })).toEqual({ vrrp: { authentication: 1, key: '********' } });
+            expect(redactSecrets({ key: 'top-level' })).toEqual({ key: '********' });
+            expect(redactSecrets({ logNotifications: [{ key: 'E', password: 'p' }] })).toEqual({
+                logNotifications: [{ key: 'E', password: '********' }],
+            });
+            expect(isSensitiveField('key')).toBe(true);
+            expect(isSensitiveField('Key', 'LogNotifications')).toBe(false);
+            expect(isSensitiveField('securityKey', 'logNotifications')).toBe(true);
+            expect(isSensitiveField('key', 'items', { module: 'm', content: 'c' })).toBe(true);
+        });
+    });
+
+    describe('scrubPersonalData (L5)', () => {
+        it('replaces MAC, IPv4 and IPv6 addresses in free text', () => {
+            expect(scrubPersonalData('/sites/s1/clients/AA-BB-CC-DD-EE-FF')).toBe('/sites/s1/clients/[mac]');
+            expect(scrubPersonalData('aa:bb:cc:dd:ee:ff at 10.0.0.2')).toBe('[mac] at [ip]');
+            expect(scrubPersonalData('host fe80::1 and 2001:db8:0:0:0:0:0:1')).toBe('host [ip] and [ip]');
+            expect(scrubPersonalData('/openapi/v1/omadac/sites/site-1/devices')).toBe('/openapi/v1/omadac/sites/site-1/devices');
+        });
+
+        it('scrubs strings nested in objects and arrays', () => {
+            expect(scrubPersonalDataDeep({ a: ['10.1.1.1', 3], b: { c: 'AA-BB-CC-DD-EE-FF' }, d: null })).toEqual({
+                a: ['[ip]', 3],
+                b: { c: '[mac]' },
+                d: null,
+            });
+        });
     });
 });

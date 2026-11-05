@@ -10,7 +10,7 @@ description: |
   "which new devices are waiting for adoption?".
   SKIP for a single change on one site (omada-safe-change), read-only
   health reviews (omada-network-audit) and firmware-only questions.
-  Note: safe-omada-mcp cannot create sites, import site backups or bind
+  Note: omada-mcp cannot create sites, import site backups or bind
   site templates; those steps are done in the controller UI and this
   skill verifies them.
 ---

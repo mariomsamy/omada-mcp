@@ -2,7 +2,7 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosRequestHe
 
 import type { CustomHeaders, OmadaApiResponse, PaginatedResult } from '../types/index.js';
 import { logger } from '../utils/logger.js';
-import { isSensitiveKey, maskValue, redactSecretsInText } from '../utils/redact.js';
+import { isSensitiveField, isSensitiveKey, maskValue, redactSecretsInText, scrubPersonalData, scrubPersonalDataDeep } from '../utils/redact.js';
 
 import type { AuthManager } from './auth.js';
 
@@ -107,17 +107,20 @@ export class RequestHandler {
                 },
             };
 
-            const url = requestConfig.url ?? 'unknown-url';
+            const fullUrl = requestConfig.url ?? 'unknown-url';
+            // Info-level logs never carry client MACs or IPs (path segments or query values); the
+            // unscrubbed URL is only logged at debug level.
+            const url = scrubPersonalData(fullUrl);
             logger.info('Omada request', {
                 method,
                 url,
-                params: this.sanitizePayload(requestConfig.params),
+                params: scrubPersonalDataDeep(this.sanitizePayload(requestConfig.params)),
                 siteId: requestConfig.params?.siteId ?? undefined,
             });
 
             logger.debug('Omada request details', {
                 method,
-                url,
+                url: fullUrl,
                 headers: this.sanitizeHeaders(requestConfig.headers as AxiosRequestHeaders | undefined),
                 params: this.sanitizePayload(requestConfig.params ?? null),
                 data: this.sanitizePayload(requestConfig.data),
@@ -407,18 +410,19 @@ export class RequestHandler {
     /**
      * Sanitize a payload for logging, masking sensitive values.
      */
-    private sanitizePayload(payload: unknown): unknown {
+    private sanitizePayload(payload: unknown, parentKey?: string): unknown {
         if (!payload || typeof payload !== 'object') {
             return payload;
         }
 
         if (Array.isArray(payload)) {
-            return payload.map((item) => this.sanitizePayload(item));
+            return payload.map((item) => this.sanitizePayload(item, parentKey));
         }
 
+        const record = payload as Record<string, unknown>;
         const sanitized: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(payload)) {
-            sanitized[key] = isSensitiveKey(key) ? maskValue(value) : this.sanitizePayload(value);
+        for (const [key, value] of Object.entries(record)) {
+            sanitized[key] = isSensitiveField(key, parentKey, record) ? maskValue(value) : this.sanitizePayload(value, key);
         }
 
         return sanitized;

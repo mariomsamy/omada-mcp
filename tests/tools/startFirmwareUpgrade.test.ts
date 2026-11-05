@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerStartFirmwareUpgradeTool } from '../../src/tools/startFirmwareUpgrade.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/startFirmwareUpgrade', () => {
     let mockClient: OmadaClient;
@@ -24,13 +25,16 @@ describe('tools/startFirmwareUpgrade', () => {
         mockClient = {
             getFirmwareInfo: vi.fn().mockResolvedValue({ curFwVer: '1.0.0', lastFwVer: '1.1.0' }),
             startOnlineUpgrade: vi.fn().mockResolvedValue({ accepted: true }),
+            listDevices: vi.fn().mockResolvedValue([{ mac: 'AA-BB-CC-DD-EE-FF', name: 'ap-1', model: 'EAP', status: 1 }]),
         } as unknown as OmadaClient;
         registerStartFirmwareUpgradeTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('startFirmwareUpgrade');
-        expect(registeredConfig?.annotations?.destructiveHint).toBe(true);
+        expect(await catalogAnnotations('startFirmwareUpgrade')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {
@@ -61,7 +65,17 @@ describe('tools/startFirmwareUpgrade', () => {
                 (caught: unknown) => caught
             );
         expect(error).toBeInstanceOf(z.ZodError);
-        expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['deviceMac'], code: 'invalid_string' }));
+        expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['deviceMac'], code: 'invalid_format' }));
         for (const operation of Object.values(mockClient)) expect(operation).not.toHaveBeenCalled();
+    });
+
+    it('preflights the site device list and refuses an unknown device (L6)', async () => {
+        const preview = await toolHandler({ siteId: 'site-1', deviceMac: 'AA:BB:CC:DD:EE:FF' }, { sessionId: 's1' });
+        expect(parseText(preview).result).toMatchObject({ before: { device: { name: 'ap-1' }, firmware: { curFwVer: '1.0.0' } } });
+        vi.mocked(mockClient.listDevices).mockResolvedValue([]);
+        await expect(toolHandler({ siteId: 'site-1', deviceMac: 'AA-BB-CC-DD-EE-FF', dryRun: false }, { sessionId: 's1' })).rejects.toThrow(
+            'Device AA-BB-CC-DD-EE-FF was not found in the selected site'
+        );
+        expect(mockClient.startOnlineUpgrade).not.toHaveBeenCalled();
     });
 });

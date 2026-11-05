@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerStartCableTestTool } from '../../src/tools/startCableTest.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/startCableTest', () => {
     let mockClient: OmadaClient;
@@ -23,13 +24,16 @@ describe('tools/startCableTest', () => {
         } as unknown as McpServer;
         mockClient = {
             startCableTest: vi.fn().mockResolvedValue({ accepted: true }),
+            listDevices: vi.fn().mockResolvedValue([{ mac: 'AA-BB-CC-DD-EE-FF', name: 'sw-1', type: 'switch' }]),
         } as unknown as OmadaClient;
         registerStartCableTestTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('startCableTest');
-        expect(registeredConfig?.annotations?.destructiveHint).toBe(true);
+        expect(await catalogAnnotations('startCableTest')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {
@@ -65,5 +69,15 @@ describe('tools/startCableTest', () => {
         expect(error).toBeInstanceOf(z.ZodError);
         expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['ports'], code: 'custom' }));
         for (const operation of Object.values(mockClient)) expect(operation).not.toHaveBeenCalled();
+    });
+
+    it('preflights the site device list and refuses an unknown switch (L6)', async () => {
+        const preview = await toolHandler({ siteId: 'site-1', switchMac: 'AA-BB-CC-DD-EE-FF', ports: [1] }, { sessionId: 's1' });
+        expect(parseText(preview).result).toMatchObject({ device: { name: 'sw-1', type: 'switch' } });
+        vi.mocked(mockClient.listDevices).mockResolvedValue([{ mac: '11-22-33-44-55-66' }]);
+        await expect(
+            toolHandler({ siteId: 'site-1', switchMac: 'AA-BB-CC-DD-EE-FF', ports: [1], dryRun: false }, { sessionId: 's1' })
+        ).rejects.toThrow('Device AA-BB-CC-DD-EE-FF was not found in the selected site');
+        expect(mockClient.startCableTest).not.toHaveBeenCalled();
     });
 });

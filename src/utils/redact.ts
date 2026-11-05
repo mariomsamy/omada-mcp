@@ -52,6 +52,33 @@ export function isSensitiveKey(key: string): boolean {
 }
 
 /**
+ * Collections whose entries carry a non-secret `key`: the log/audit notification type identifier
+ * (LogNotificationOpenApiVO, LogNotificationEditOpenApi[V2]VO, AuditLogNotification*OpenApiVO in
+ * docs/openapi/10-log.json). Compared lower-case.
+ */
+const NON_SECRET_KEY_PARENTS = new Set(['lognotifications', 'alertnotifications', 'eventnotifications', 'auditlognotifications']);
+
+/**
+ * A bare `key` is an event-type identifier (not a secret) inside notification collections and in
+ * event/alert log entries (EventLogOpenApiVO / AlertLogOpenApiVO: `id`, `key`, `module`, `content`,
+ * `time`). Everywhere else (for example `OswVrrpOpenApiVO.key`, a VRRP authentication key) it stays masked.
+ */
+function isEventTypeKey(parentKey: string | undefined, siblings: Record<string, unknown> | undefined): boolean {
+    if (parentKey !== undefined && NON_SECRET_KEY_PARENTS.has(parentKey.toLowerCase())) return true;
+    return siblings !== undefined && 'module' in siblings && 'content' in siblings && 'time' in siblings;
+}
+
+/**
+ * Field-aware variant of {@link isSensitiveKey}: `parentKey` is the name of the property that holds
+ * the object (or the array of objects) and `siblings` is the object itself. Use this from every
+ * recursive redactor so that the scoping rules stay identical across log and result layers.
+ */
+export function isSensitiveField(key: string, parentKey?: string, siblings?: Record<string, unknown>): boolean {
+    if (key.toLowerCase() === 'key' && isEventTypeKey(parentKey, siblings)) return false;
+    return isSensitiveKey(key);
+}
+
+/**
  * Heuristic for free-form strings that look like a credential/token even when the
  * surrounding key name gives no hint (e.g. a bare token in an array).
  */
@@ -79,10 +106,13 @@ export function maskValue(value: unknown): unknown {
 }
 
 /** Redact named secrets in tool results without hiding ordinary identifiers. */
-export function redactSecrets(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(redactSecrets);
+export function redactSecrets(value: unknown, parentKey?: string): unknown {
+    if (Array.isArray(value)) return value.map((entry) => redactSecrets(entry, parentKey));
     if (value === null || typeof value !== 'object') return value;
-    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, isSensitiveKey(key) ? maskValue(entry) : redactSecrets(entry)]));
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+        Object.entries(record).map(([key, entry]) => [key, isSensitiveField(key, parentKey, record) ? maskValue(entry) : redactSecrets(entry, key)])
+    );
 }
 
 /**
@@ -94,4 +124,24 @@ export function redactSecretsInText(text: string): string {
         /("?)([A-Za-z_][A-Za-z0-9_.-]*)\1(\s*[:=]\s*)("(?:[^"\\]|\\.)*"|'[^']*'|[^\s,;&}\]]+)/g,
         (match, quote: string, key: string, separator: string) => (isSensitiveKey(key) ? `${quote}${key}${quote}${separator}"********"` : match)
     );
+}
+
+const MAC_IN_TEXT = /\b[0-9A-Fa-f]{2}([:-])(?:[0-9A-Fa-f]{2}\1){4}[0-9A-Fa-f]{2}\b/g;
+const IPV4_IN_TEXT = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+const IPV6_IN_TEXT = /\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\b|\b(?:[0-9A-Fa-f]{1,4}:){1,7}:(?:[0-9A-Fa-f]{1,4}\b)?/g;
+
+/**
+ * Replace client-identifying network addresses (MAC, IPv4, IPv6) in free text such as a request
+ * URL with placeholders. Used for info-level logs, which may be retained longer than debug logs.
+ */
+export function scrubPersonalData(text: string): string {
+    return text.replace(MAC_IN_TEXT, '[mac]').replace(IPV4_IN_TEXT, '[ip]').replace(IPV6_IN_TEXT, '[ip]');
+}
+
+/** Deep variant of {@link scrubPersonalData} for log field values (strings anywhere in the structure). */
+export function scrubPersonalDataDeep(value: unknown): unknown {
+    if (typeof value === 'string') return scrubPersonalData(value);
+    if (Array.isArray(value)) return value.map(scrubPersonalDataDeep);
+    if (value === null || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, scrubPersonalDataDeep(entry)]));
 }

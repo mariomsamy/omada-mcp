@@ -70,4 +70,4 @@ rather than this table.
 - thalisantunes/mcp-omada (Apache-2.0): channel/`freq` parsing and the
   whole-object radio write behaviour (summarised).
 
-All rewritten in our own words for safe-omada-mcp. See `NOTICE.md`.
+All rewritten in our own words for omada-mcp. See `NOTICE.md`.

@@ -34,7 +34,7 @@ Marking alerts resolved afterwards (`resolveAlertLogs`) needs
 `logs:rw`, which is not in `ops-write`; it requires `admin` or an
 explicit grant, and goes through omada-safe-change.
 
-Tool names are as registered by safe-omada-mcp; your client may prefix
+Tool names are as registered by omada-mcp; your client may prefix
 them. In compact catalog mode use `callOperation`.
 
 ## Tools

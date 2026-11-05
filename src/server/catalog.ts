@@ -12,6 +12,8 @@ export interface CatalogOptions {
     allowToolHeaders?: boolean;
     catalogMode?: 'standard' | 'compact';
     capabilityProfile?: string;
+    /** Optional webhook destination allowlist (OMADA_WEBHOOK_ALLOWED_HOSTS). */
+    webhookAllowedHosts?: string[];
 }
 
 export interface CatalogTool {
@@ -154,6 +156,7 @@ export function registerCatalog(server: McpServer, tools: CatalogTool[], options
                 recoveryEnabled: enabled.some((tool) => tool.category === 'recovery'),
                 deprecatedIncluded: options.includeDeprecated ?? false,
                 toolHeadersEnabled: options.allowToolHeaders ?? false,
+                webhookAllowlist: (options.webhookAllowedHosts?.length ?? 0) > 0 ? 'configured' : 'not configured',
                 mutationDefault: 'preview; explicitly set dryRun:false to apply',
                 supportedTransport: 'stdio',
                 api: 'official Open API',

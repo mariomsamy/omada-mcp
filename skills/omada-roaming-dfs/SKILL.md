@@ -6,7 +6,7 @@ description: |
   walking, "fast roaming is on but does nothing", 5 GHz channels that
   keep changing by themselves, radar/DFS evictions, choosing channels
   and widths for several APs.
-  Uses safe-omada-mcp read tools to compare configured and on-air radio
+  Uses omada-mcp read tools to compare configured and on-air radio
   state, then hands any change to omada-safe-change.
   SKIP for a general "Wi-Fi is slow" complaint (start with
   omada-wifi-troubleshoot), for scored audits (omada-network-audit) and
@@ -31,7 +31,7 @@ change goes through [omada-safe-change](../omada-safe-change/SKILL.md).
 | Site roaming / band steering | `updateRoaming`, `updateBandSteering` | `wireless-radio:rw` | `admin` or explicit grant |
 | SSID rate control (drop legacy rates) | `updateSsidRateControl` | `wireless-ssid:rw` | `admin` or explicit grant |
 
-Tool names are as registered by safe-omada-mcp; your client may prefix
+Tool names are as registered by omada-mcp; your client may prefix
 them. In compact catalog mode use `callOperation`.
 
 ## Workflow
@@ -125,4 +125,4 @@ through omada-safe-change, or the controller UI export.
 - `checklists/roaming-checklist.md`: the ordered checklist.
 
 Adapted from the `omada-network` skill in kaviththiranga/omada-mcp-server
-(MIT, (c) 2026 Kavith Lokuhewage), rewritten for safe-omada-mcp tools.
+(MIT, (c) 2026 Kavith Lokuhewage), rewritten for omada-mcp tools.

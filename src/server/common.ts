@@ -5,7 +5,7 @@ import { z } from 'zod';
 import packageMetadata from '../../package.json' with { type: 'json' };
 
 import { logger } from '../utils/logger.js';
-import { isLikelySensitiveString, isSensitiveKey, maskValue, redactSecrets, redactSecretsInText } from '../utils/redact.js';
+import { isLikelySensitiveString, isSensitiveField, maskValue, redactSecrets, redactSecretsInText, scrubPersonalData } from '../utils/redact.js';
 
 // Custom headers schema for optional HTTP headers
 export const customHeadersSchema = z.record(z.string(), z.string()).optional();
@@ -68,7 +68,7 @@ export function safeSerialize(value: unknown): string {
     }
 }
 
-function sanitizeForLogs(value: unknown): unknown {
+function sanitizeForLogs(value: unknown, parentKey?: string): unknown {
     if (value === null || value === undefined) {
         return value;
     }
@@ -78,18 +78,39 @@ function sanitizeForLogs(value: unknown): unknown {
     }
 
     if (Array.isArray(value)) {
-        return value.map((entry) => sanitizeForLogs(entry));
+        return value.map((entry) => sanitizeForLogs(entry, parentKey));
     }
 
     if (typeof value === 'object') {
+        const record = value as Record<string, unknown>;
         const sanitized: Record<string, unknown> = {};
-        for (const [key, entry] of Object.entries(value)) {
-            sanitized[key] = isSensitiveKey(key) ? maskValue(entry) : sanitizeForLogs(entry);
+        for (const [key, entry] of Object.entries(record)) {
+            sanitized[key] = isSensitiveField(key, parentKey, record) ? maskValue(entry) : sanitizeForLogs(entry, key);
         }
         return sanitized;
     }
 
     return value;
+}
+
+/** Argument names that identify the target of a call and are safe to log at info level (values scrubbed). */
+const INFO_IDENTIFIER_KEY = /^(siteId|dryRun|scope|scheduleId|profileId|networkId|ssidId|wlanId|ruleId|aclId|routeId|historyId|webhookId|apply)$|Id$/;
+
+/**
+ * Info-level view of tool arguments: only identifier-like scalar fields (site, resource IDs, dry-run
+ * flag), with MAC and IP addresses replaced by placeholders, plus the list of supplied argument names.
+ * Full (secret-masked) arguments are logged at debug level only.
+ */
+export function summarizeArgsForInfo(args: unknown): Record<string, unknown> {
+    if (args === null || typeof args !== 'object' || Array.isArray(args)) return {};
+    const record = args as Record<string, unknown>;
+    const identifiers: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(record)) {
+        if (!INFO_IDENTIFIER_KEY.test(key) || isSensitiveField(key)) continue;
+        if (typeof value === 'string') identifiers[key] = scrubPersonalData(value);
+        else if (typeof value === 'boolean' || typeof value === 'number') identifiers[key] = value;
+    }
+    return { argNames: Object.keys(record).sort(), ...(Object.keys(identifiers).length > 0 ? { identifiers } : {}) };
 }
 
 function summarizeSuccess(method: string, result: unknown): Record<string, unknown> | undefined {
@@ -134,13 +155,14 @@ export interface MutationSummary {
     result?: unknown;
 }
 
-export function wrapToolHandler<Args extends z.ZodRawShape>(
+export function wrapToolHandler<Args extends Record<string, unknown>>(
     name: string,
-    handler: (args: z.objectOutputType<Args, z.ZodTypeAny>, extra: ToolExtra) => Promise<CallToolResult>
-): (args: z.objectOutputType<Args, z.ZodTypeAny>, extra: ToolExtra) => Promise<CallToolResult> {
-    return async (args: z.objectOutputType<Args, z.ZodTypeAny>, extra: ToolExtra): Promise<CallToolResult> => {
+    handler: (args: Args, extra: ToolExtra) => Promise<CallToolResult>
+): (args: Args, extra: ToolExtra) => Promise<CallToolResult> {
+    return async (args: Args, extra: ToolExtra): Promise<CallToolResult> => {
         const sessionId = extra.sessionId ?? 'unknown-session';
-        logger.info('Tool invoked', { tool: name, sessionId, args: safeSerialize(args) });
+        logger.info('Tool invoked', { tool: name, sessionId, ...summarizeArgsForInfo(args) });
+        logger.debug('Tool arguments', { tool: name, sessionId, args: safeSerialize(args) });
 
         try {
             const result = await handler(args, extra);
@@ -197,11 +219,11 @@ export function toMutationResult(summary: MutationSummary, context: { tool?: str
     return toToolResult(normalized);
 }
 
-export function wrapMutationToolHandler<Args extends z.ZodRawShape>(
+export function wrapMutationToolHandler<Args extends Record<string, unknown>>(
     name: string,
-    summary: (args: z.objectOutputType<Args, z.ZodTypeAny>, result: unknown, mode: 'apply' | 'dry-run') => MutationSummary,
-    handler: (args: z.objectOutputType<Args, z.ZodTypeAny>, extra: ToolExtra) => Promise<unknown>
-): (args: z.objectOutputType<Args, z.ZodTypeAny>, extra: ToolExtra) => Promise<CallToolResult> {
+    summary: (args: Args, result: unknown, mode: 'apply' | 'dry-run') => MutationSummary,
+    handler: (args: Args, extra: ToolExtra) => Promise<unknown>
+): (args: Args, extra: ToolExtra) => Promise<CallToolResult> {
     return wrapToolHandler(name, async (args, extra) => {
         const mode = (args as Record<string, unknown>).dryRun === false ? 'apply' : 'dry-run';
         const normalizedArgs = { ...args, dryRun: mode === 'dry-run' };
@@ -233,11 +255,17 @@ function setupServerLogging(server: McpServer): void {
         const method = (schema as { shape: { method: { value: string } } }).shape.method.value;
         const wrapped: RequestCallback = async (request, extra) => {
             const sessionId = extra.sessionId ?? 'unknown-session';
-            const logFields: Record<string, unknown> = { method, sessionId };
-            if ('params' in request) {
-                logFields.params = safeSerialize((request as { params: unknown }).params);
+            const params = 'params' in request ? (request as { params: unknown }).params : undefined;
+            const toolName =
+                params !== null && typeof params === 'object' && typeof (params as { name?: unknown }).name === 'string'
+                    ? (params as { name: string }).name
+                    : undefined;
+            // Info level: method and tool name only. Parameters (tool arguments) can carry client MACs,
+            // IPs and names, so the secret-masked params are logged at debug level.
+            logger.info('MCP request received', { method, sessionId, ...(toolName ? { tool: toolName } : {}) });
+            if (params !== undefined) {
+                logger.debug('MCP request params', { method, sessionId, params: safeSerialize(params) });
             }
-            logger.info('MCP request received', logFields);
 
             try {
                 const result = await handler(request, extra);
@@ -282,27 +310,22 @@ function setupServerLogging(server: McpServer): void {
     // biome-ignore lint/suspicious/useAwait: Handler signature requires async even without await
     server.server.fallbackRequestHandler = async (request: any, extra: any) => {
         const sessionId = extra.sessionId ?? 'unknown-session';
-        logger.warn('Unhandled request received', {
-            method: request.method,
-            sessionId,
-            params: safeSerialize(request.params),
-        });
+        logger.warn('Unhandled request received', { method: request.method, sessionId });
+        logger.debug('Unhandled request params', { method: request.method, sessionId, params: safeSerialize(request.params) });
         throw new Error(`Unhandled request: ${request.method}`);
     };
 
     // biome-ignore lint/suspicious/noExplicitAny: MCP SDK doesn't provide types for notification handler
     // biome-ignore lint/suspicious/useAwait: Handler signature requires async even without await
     server.server.fallbackNotificationHandler = async (notification: any) => {
-        logger.warn('Unhandled notification received', {
-            method: notification.method,
-            params: safeSerialize(notification.params),
-        });
+        logger.warn('Unhandled notification received', { method: notification.method });
+        logger.debug('Unhandled notification params', { method: notification.method, params: safeSerialize(notification.params) });
     };
 }
 
 export function createServer(): McpServer {
     const server = new McpServer({
-        name: 'safe-omada-mcp',
+        name: 'omada-mcp',
         version: packageMetadata.version,
     });
 

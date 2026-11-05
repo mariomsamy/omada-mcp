@@ -209,9 +209,7 @@ export const CAPABILITY_PROFILE_DEFAULTS: Record<CapabilityProfile, string> = {
     compatibility: 'all:rw',
 };
 
-const createBooleanStringSchema = (
-    defaultValue: boolean
-): z.ZodEffects<z.ZodOptional<z.ZodUnion<[z.ZodLiteral<'true'>, z.ZodLiteral<'false'>]>>, boolean, 'true' | 'false' | undefined> =>
+const createBooleanStringSchema = (defaultValue: boolean) =>
     z
         .union([z.literal('true'), z.literal('false')])
         .optional()
@@ -247,6 +245,10 @@ const envSchema = z
         includeDeprecated: createBooleanStringSchema(false),
         catalogMode: z.enum(['standard', 'compact']).optional().default('standard'),
         allowToolHeaders: createBooleanStringSchema(false),
+        webhookAllowedHosts: listStringSchema.refine(
+            (hosts) => !hosts || hosts.every((host) => /^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.?$/.test(host)),
+            'OMADA_WEBHOOK_ALLOWED_HOSTS must be a comma-separated list of hostnames (optionally "*.example.com"); no schemes, ports or paths.'
+        ),
 
         // Omada Client Configuration
         baseUrl: z.string().url({ message: 'OMADA_BASE_URL must be a valid URL' }),
@@ -311,26 +313,17 @@ const envSchema = z
             path: ['httpBindAddr'],
         }
     )
-    .refine(
-        (data) => {
-            // Validate httpAllowedOrigins if provided
-            if (data.httpAllowedOrigins) {
-                for (const origin of data.httpAllowedOrigins) {
-                    if (!isValidOrigin(origin)) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        },
-        (data) => {
-            const invalidOrigin = data.httpAllowedOrigins?.find((origin) => !isValidOrigin(origin));
-            return {
+    .superRefine((data, context) => {
+        // Validate httpAllowedOrigins if provided
+        const invalidOrigin = data.httpAllowedOrigins?.find((origin: string) => !isValidOrigin(origin));
+        if (invalidOrigin !== undefined) {
+            context.addIssue({
+                code: 'custom',
                 message: `MCP_HTTP_ALLOWED_ORIGINS contains invalid origin: ${invalidOrigin}`,
                 path: ['httpAllowedOrigins'],
-            };
+            });
         }
-    );
+    });
 
 /**
  * The resolved Omada connection parameters required to build an OmadaClient.
@@ -348,10 +341,18 @@ export interface OmadaConnectionConfig {
 }
 
 export interface EnvironmentConfig {
-    capabilityProfile: CapabilityProfile;
+    /**
+     * Effective profile: the selected OMADA_CAPABILITY_PROFILE, or 'custom' when OMADA_TOOL_CATEGORIES
+     * defines the catalog (it always overrides the profile defaults).
+     */
+    capabilityProfile: CapabilityProfile | 'custom';
+    /** The OMADA_CAPABILITY_PROFILE value (or its default), even when OMADA_TOOL_CATEGORIES overrides it. */
+    requestedCapabilityProfile: CapabilityProfile;
     includeDeprecated?: boolean;
     catalogMode?: 'standard' | 'compact';
     allowToolHeaders?: boolean;
+    /** OMADA_WEBHOOK_ALLOWED_HOSTS: optional allowlist for log/audit notification webhook destinations. */
+    webhookAllowedHosts?: string[];
     caFile?: string;
     // Tool category filtering
     toolCategories: Map<ToolCategory, Set<ToolPermission>>;
@@ -397,6 +398,7 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Environ
         includeDeprecated: env.OMADA_INCLUDE_DEPRECATED,
         catalogMode: env.OMADA_CATALOG_MODE,
         allowToolHeaders: env.OMADA_ALLOW_TOOL_HEADERS,
+        webhookAllowedHosts: env.OMADA_WEBHOOK_ALLOWED_HOSTS,
 
         // Omada Client Configuration
         baseUrl: env.OMADA_BASE_URL,
@@ -451,7 +453,13 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Environ
     const rawToolCategories = parsed.data.toolCategories ?? CAPABILITY_PROFILE_DEFAULTS[parsed.data.capabilityProfile];
     const { categories: toolCategories, warnings: categoryWarnings } = parseToolCategories(rawToolCategories);
     warnings.push(...categoryWarnings);
-    if (!parsed.data.toolCategories) {
+    if (parsed.data.toolCategories) {
+        if (env.OMADA_CAPABILITY_PROFILE) {
+            warnings.push(
+                `OMADA_TOOL_CATEGORIES overrides OMADA_CAPABILITY_PROFILE=${parsed.data.capabilityProfile}; the profile's default categories are ignored and the effective profile is "custom".`
+            );
+        }
+    } else {
         warnings.push(`OMADA_CAPABILITY_PROFILE=${parsed.data.capabilityProfile} selected default tool categories: ${rawToolCategories}`);
     }
     if (parsed.data.capabilityProfile === 'compatibility') {
@@ -464,10 +472,12 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Environ
     }
 
     return {
-        capabilityProfile: parsed.data.capabilityProfile,
+        capabilityProfile: parsed.data.toolCategories ? 'custom' : parsed.data.capabilityProfile,
+        requestedCapabilityProfile: parsed.data.capabilityProfile,
         includeDeprecated: parsed.data.includeDeprecated,
         catalogMode: parsed.data.catalogMode,
         allowToolHeaders: parsed.data.allowToolHeaders,
+        webhookAllowedHosts: parsed.data.webhookAllowedHosts,
         caFile: parsed.data.caFile,
         // Tool category filtering
         toolCategories,

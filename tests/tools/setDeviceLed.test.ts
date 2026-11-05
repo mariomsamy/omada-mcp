@@ -20,13 +20,14 @@ describe('tools/setDeviceLed', () => {
 
         mockClient = {
             setDeviceLed: vi.fn().mockResolvedValue({ accepted: true }),
+            listDevices: vi.fn().mockResolvedValue([{ mac: 'AA-BB-CC-DD-EE-FF', type: 'ap' }]),
         } as unknown as OmadaClient;
     });
 
     it('calls the set device LED action when not in dry-run mode', async () => {
         registerSetDeviceLedTool(mockServer, mockClient);
         await toolHandler({ dryRun: false, deviceMac: 'AA:BB:CC:DD:EE:FF', ledSetting: 1, siteId: 'site-1' }, { sessionId: 's1' });
-        expect(mockClient.setDeviceLed).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF', 1, 'site-1', undefined);
+        expect(mockClient.setDeviceLed).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF', 1, 'ap', 'site-1', undefined);
     });
 
     it('returns a dry-run summary without calling the controller', async () => {
@@ -42,7 +43,7 @@ describe('tools/setDeviceLed', () => {
                 mode: 'dry-run',
                 status: 'planned',
                 summary: 'Planned LED setting 2 for device AA:BB:CC:DD:EE:FF.',
-                result: { accepted: true, dryRun: true, ledSetting: 2 },
+                result: { accepted: true, dryRun: true, ledSetting: 2, deviceType: 'ap' },
             },
         });
         expect(JSON.parse(result.content[0].text as string)).toEqual(result.structuredContent);
@@ -59,5 +60,20 @@ describe('tools/setDeviceLed', () => {
         for (const [name, operation] of Object.entries(mockClient)) {
             if (!/^(get|list|resolve)/.test(name)) expect(operation).not.toHaveBeenCalled();
         }
+    });
+
+    it('selects the documented route from the device type and refuses unknown or unsupported devices', async () => {
+        registerSetDeviceLedTool(mockServer, mockClient);
+        vi.mocked(mockClient.listDevices).mockResolvedValue([{ mac: 'AA-BB-CC-DD-EE-FF', type: 'Gateway' }] as never);
+        await toolHandler({ dryRun: false, deviceMac: 'AA:BB:CC:DD:EE:FF', ledSetting: 0 }, { sessionId: 's1' });
+        expect(mockClient.setDeviceLed).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF', 0, 'gateway', undefined, undefined);
+
+        vi.mocked(mockClient.listDevices).mockResolvedValue([{ mac: 'AA-BB-CC-DD-EE-FF', type: 'olt' }] as never);
+        await expect(toolHandler({ dryRun: false, deviceMac: 'AA:BB:CC:DD:EE:FF', ledSetting: 0 }, { sessionId: 's1' })).rejects.toThrow(
+            'LED control is documented only for ap, switch and gateway devices'
+        );
+        vi.mocked(mockClient.listDevices).mockResolvedValue([] as never);
+        await expect(toolHandler({ deviceMac: 'AA:BB:CC:DD:EE:FF', ledSetting: 0 }, { sessionId: 's1' })).rejects.toThrow('was not found');
+        expect(mockClient.setDeviceLed).toHaveBeenCalledTimes(1);
     });
 });

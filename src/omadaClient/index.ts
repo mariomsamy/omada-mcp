@@ -25,7 +25,7 @@ import type {
 } from '../types/index.js';
 
 import { AccountOperations } from './account.js';
-import { ActionOperations } from './actions.js';
+import { ActionOperations, type DeviceLedType } from './actions.js';
 import { AuthManager } from './auth.js';
 import { ClientOperations } from './client.js';
 import { ControllerOperations } from './controller.js';
@@ -367,8 +367,14 @@ export class OmadaClient {
         return await this.actionOps.reconnectClient(clientMac, siteId, customHeaders);
     }
 
-    public async setDeviceLed(deviceMac: string, ledSetting: number, siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
-        return await this.actionOps.setDeviceLed(deviceMac, ledSetting, siteId, customHeaders);
+    public async setDeviceLed(
+        deviceMac: string,
+        ledSetting: number,
+        deviceType: DeviceLedType,
+        siteId?: string,
+        customHeaders?: CustomHeaders
+    ): Promise<unknown> {
+        return await this.actionOps.setDeviceLed(deviceMac, ledSetting, deviceType, siteId, customHeaders);
     }
     public async getGridAutoCheckUpgrade(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
         return await this.deviceOps.getGridAutoCheckUpgrade(page, pageSize, customHeaders);

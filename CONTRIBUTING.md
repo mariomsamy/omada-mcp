@@ -1,4 +1,4 @@
-# Contributing to Safe Omada MCP
+# Contributing to Omada MCP
 
 Thanks for your interest in contributing. This guide covers everything you need to go from zero to a merged pull request.
 
@@ -11,8 +11,8 @@ Thanks for your interest in contributing. This guide covers everything you need 
 ## Getting Started
 
 ```bash
-git clone https://github.com/gaspareduard/Omada-mcp.git
-cd Omada-mcp
+git clone https://github.com/mariomsamy/omada-mcp.git
+cd omada-mcp
 npm ci
 cp .env.example .env.local   # fill in your controller credentials
 npm run dev                  # starts the server with tsx hot-reload

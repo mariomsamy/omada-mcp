@@ -17,10 +17,10 @@
 The `publish-npm` job uses GitHub OIDC with `id-token: write` on a GitHub-hosted
 runner. It requires npm 11.5.1 or newer and does not use `NPM_TOKEN`.
 
-For `safe-omada-mcp`, configure npm's GitHub Actions trusted publisher with:
+For `omada-mcp`, configure npm's GitHub Actions trusted publisher with:
 
-- Organization or user: `gaspareduard`
-- Repository: `Omada-mcp`
+- Organization or user: `mariomsamy`
+- Repository: `omada-mcp`
 - Workflow filename: `publish.yml`
 - Environment name: empty (the publishing job does not use an environment)
 - Allowed actions: `npm publish`; separate `npm dist-tag` access is unnecessary

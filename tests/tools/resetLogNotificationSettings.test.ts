@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerResetLogNotificationSettingsTool } from '../../src/tools/resetLogNotificationSettings.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/resetLogNotificationSettings', () => {
     let mockClient: OmadaClient;
@@ -30,9 +31,11 @@ describe('tools/resetLogNotificationSettings', () => {
         registerResetLogNotificationSettingsTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('resetLogNotificationSettings');
-        expect(registeredConfig?.annotations?.destructiveHint).toBe(true);
+        expect(await catalogAnnotations('resetLogNotificationSettings')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {
@@ -61,7 +64,7 @@ describe('tools/resetLogNotificationSettings', () => {
                 (caught: unknown) => caught
             );
         expect(error).toBeInstanceOf(z.ZodError);
-        expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['scope'], code: 'invalid_enum_value' }));
+        expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['scope'], code: 'invalid_value' }));
         for (const operation of Object.values(mockClient)) expect(operation).not.toHaveBeenCalled();
     });
 

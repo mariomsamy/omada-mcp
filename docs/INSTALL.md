@@ -1,6 +1,6 @@
 # Install for your AI agent
 
-safe-omada-mcp is a local **stdio** MCP server. Your agent starts it as a
+omada-mcp is a local **stdio** MCP server. Your agent starts it as a
 child process and passes the controller settings as environment
 variables. All examples use placeholders: replace `<...>` with your own
 values and never commit real credentials.
@@ -30,7 +30,8 @@ You will need:
 | `OMADA_STRICT_SSL` | `true` (default). Keep it on |
 | `OMADA_CA_FILE` | Optional path to a PEM CA bundle for a private CA |
 | `OMADA_CAPABILITY_PROFILE` | `safe-read` (default), `ops-write` or `admin` |
-| `OMADA_TOOL_CATEGORIES` | Optional explicit categories; replaces the profile defaults |
+| `OMADA_TOOL_CATEGORIES` | Optional explicit categories; replaces the profile defaults. When it is set, the effective profile is reported as `custom`, and a startup warning is logged if `OMADA_CAPABILITY_PROFILE` was also set |
+| `OMADA_WEBHOOK_ALLOWED_HOSTS` | Optional comma-separated allowlist (`hooks.example.com,*.alerts.example.net`) for log/audit notification webhook destinations |
 
 The full list is in `.env.example`.
 
@@ -54,19 +55,21 @@ name checks stay on. Only in a throwaway lab should you set
 
 Start with `safe-read`. Even with write tools enabled, every write
 previews by default (`dryRun: true`) and only applies when called again
-with `dryRun: false`. Configure your agent to ask before running write
+with `dryRun: false`. A preview sends read requests only (preflight and
+current-state reads) and no mutating request; update tools show a
+field-level `diff` of current versus planned values. Configure your agent to ask before running write
 tools.
 
 ## 3. Build the server
 
 ```bash
-git clone <this-repository-url> safe-omada-mcp
-cd safe-omada-mcp
+git clone https://github.com/mariomsamy/omada-mcp.git
+cd omada-mcp
 npm ci
 npm run build          # produces dist/index.js
 ```
 
-The examples below use `/absolute/path/to/safe-omada-mcp/dist/index.js`.
+The examples below use `/absolute/path/to/omada-mcp/dist/index.js`.
 Node.js 24 or later is required. The Docker variant at the end needs no
 local Node.js.
 
@@ -77,14 +80,14 @@ local Node.js.
 Command line (stored in your user or project config):
 
 ```bash
-claude mcp add safe-omada --scope user \
+claude mcp add omada --scope user \
   -e OMADA_BASE_URL=https://<controller-host>:8043 \
   -e OMADA_CLIENT_ID=<client-id> \
   -e OMADA_CLIENT_SECRET=<client-secret> \
   -e OMADA_OMADAC_ID=<omadac-id> \
   -e OMADA_STRICT_SSL=true \
   -e OMADA_CAPABILITY_PROFILE=safe-read \
-  -- node /absolute/path/to/safe-omada-mcp/dist/index.js
+  -- node /absolute/path/to/omada-mcp/dist/index.js
 ```
 
 Or a project `.mcp.json` that reads the secrets from your shell
@@ -93,9 +96,9 @@ environment (so the file holds no secrets and can be committed):
 ```json
 {
   "mcpServers": {
-    "safe-omada": {
+    "omada": {
       "command": "node",
-      "args": ["/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/omada-mcp/dist/index.js"],
       "env": {
         "OMADA_BASE_URL": "${OMADA_BASE_URL}",
         "OMADA_CLIENT_ID": "${OMADA_CLIENT_ID}",
@@ -125,9 +128,9 @@ Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
-    "safe-omada": {
+    "omada": {
       "command": "node",
-      "args": ["/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/omada-mcp/dist/index.js"],
       "env": {
         "OMADA_BASE_URL": "https://<controller-host>:8043",
         "OMADA_CLIENT_ID": "<client-id>",
@@ -151,7 +154,7 @@ text: protect the file and prefer a read-only Open API app.
 ```toml
 [mcp_servers.omada]
 command = "node"
-args = ["/absolute/path/to/safe-omada-mcp/dist/index.js"]
+args = ["/absolute/path/to/omada-mcp/dist/index.js"]
 
 [mcp_servers.omada.env]
 OMADA_BASE_URL = "https://<controller-host>:8043"
@@ -173,9 +176,9 @@ User-wide `~/.cursor/mcp.json` or per project `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "safe-omada": {
+    "omada": {
       "command": "node",
-      "args": ["/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/omada-mcp/dist/index.js"],
       "env": {
         "OMADA_BASE_URL": "https://<controller-host>:8043",
         "OMADA_CLIENT_ID": "<client-id>",
@@ -199,9 +202,9 @@ Skills: save each `SKILL.md` as a rule in `.cursor/rules/`
 ```json
 {
   "mcpServers": {
-    "safe-omada": {
+    "omada": {
       "command": "node",
-      "args": ["/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/omada-mcp/dist/index.js"],
       "env": {
         "OMADA_BASE_URL": "$OMADA_BASE_URL",
         "OMADA_CLIENT_ID": "$OMADA_CLIENT_ID",
@@ -228,10 +231,10 @@ stored by VS Code instead of the file:
     { "type": "promptString", "id": "omada-client-secret", "description": "Omada Open API client secret", "password": true }
   ],
   "servers": {
-    "safe-omada": {
+    "omada": {
       "type": "stdio",
       "command": "node",
-      "args": ["/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/omada-mcp/dist/index.js"],
       "env": {
         "OMADA_BASE_URL": "https://<controller-host>:8043",
         "OMADA_CLIENT_ID": "<client-id>",
@@ -254,9 +257,9 @@ Skills: copy relevant content into `.github/copilot-instructions.md`.
 ```json
 {
   "mcpServers": {
-    "safe-omada": {
+    "omada": {
       "command": "node",
-      "args": ["/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/omada-mcp/dist/index.js"],
       "env": {
         "OMADA_BASE_URL": "https://<controller-host>:8043",
         "OMADA_CLIENT_ID": "<client-id>",
@@ -278,9 +281,9 @@ to `cline_mcp_settings.json`:
 ```json
 {
   "mcpServers": {
-    "safe-omada": {
+    "omada": {
       "command": "node",
-      "args": ["/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/omada-mcp/dist/index.js"],
       "env": {
         "OMADA_BASE_URL": "https://<controller-host>:8043",
         "OMADA_CLIENT_ID": "<client-id>",
@@ -304,9 +307,9 @@ Leave "auto-approve" off for write tools.
 ```json
 {
   "mcp": {
-    "safe-omada": {
+    "omada": {
       "type": "local",
-      "command": ["node", "/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "command": ["node", "/absolute/path/to/omada-mcp/dist/index.js"],
       "enabled": true,
       "environment": {
         "OMADA_BASE_URL": "https://<controller-host>:8043",
@@ -328,7 +331,7 @@ Skills: OpenCode reads `AGENTS.md`; use the same approach as Codex.
 Build the image once:
 
 ```bash
-docker build -t safe-omada-mcp:local .
+docker build -t omada-mcp:local .
 ```
 
 Then use `docker` as the command. `-e NAME` without a value passes the
@@ -338,7 +341,7 @@ the config file:
 ```json
 {
   "mcpServers": {
-    "safe-omada": {
+    "omada": {
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
@@ -349,7 +352,7 @@ the config file:
         "-e", "OMADA_OMADAC_ID",
         "-e", "OMADA_STRICT_SSL=true",
         "-e", "OMADA_CAPABILITY_PROFILE=safe-read",
-        "safe-omada-mcp:local"
+        "omada-mcp:local"
       ]
     }
   }
@@ -378,6 +381,7 @@ and categories).
 ## HTTP mode (lab only) and webhook changes
 
 - HTTP transport needs `MCP_SERVER_USE_HTTP=true`, `MCP_UNSAFE_ENABLE_HTTP=true` and `MCP_HTTP_BEARER_TOKEN` (32+ characters, sent as `Authorization: Bearer ...`). It binds to loopback only, checks Host/Origin, caps bodies at 1 MB and sessions at 16. A `*` origin is refused. Prefer stdio.
-- `updateLogNotificationSettings` and `updateAuditNotificationSettings` are admin-only and destructive. Applying a webhook change requires `confirmWebhookChange: true`. Webhook URLs must be https and public.
+- `updateLogNotificationSettings` and `updateAuditNotificationSettings` are admin-only and destructive. Applying a webhook change requires `confirmWebhookChange: true`. Webhook URLs must be https and public: literal private, loopback and link-local hosts are refused, the host name is resolved and refused if any address is private, and when `OMADA_WEBHOOK_ALLOWED_HOSTS` is set the host must be on that list (exact name or `*.domain`). The controller resolves the name again when it delivers, so the allowlist is the stronger control.
 - Write payloads are validated against allowlists of known keys, with a 64 KB size and depth-8 cap. IDs such as `siteId` must match `^[A-Za-z0-9_-]{1,128}$`.
-- Docker: build locally with `docker build -t omada-mcp:local .`; no prebuilt image is published.
+- Docker: build locally with `docker build -t omada-mcp:local .`; no prebuilt image is published. Run it with `--read-only --cap-drop=ALL --security-opt no-new-privileges` as in the example above.
+- Logs: at `info` level, tool calls log the tool name, argument names and identifier fields only, and Omada request URLs have client MAC and IP addresses replaced with `[mac]`/`[ip]`. Full (secret-masked) arguments and URLs appear only at `debug`. See [security-model.md](security-model.md#log-retention) for retention guidance.

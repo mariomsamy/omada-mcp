@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerUpdateLanNetworkTool } from '../../src/tools/updateLanNetwork.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/updateLanNetwork', () => {
     let mockClient: OmadaClient;
@@ -28,9 +29,11 @@ describe('tools/updateLanNetwork', () => {
         registerUpdateLanNetworkTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('updateLanNetwork');
-        expect(registeredConfig?.annotations?.destructiveHint).toBe(true);
+        expect(await catalogAnnotations('updateLanNetwork')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {
@@ -70,7 +73,7 @@ describe('tools/updateLanNetwork', () => {
                 (caught: unknown) => caught
             );
         expect(error).toBeInstanceOf(z.ZodError);
-        expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['networkId'], code: 'invalid_string' }));
+        expect((error as z.ZodError).issues).toContainEqual(expect.objectContaining({ path: ['networkId'], code: 'invalid_format' }));
         for (const operation of Object.values(mockClient)) expect(operation).not.toHaveBeenCalled();
     });
 

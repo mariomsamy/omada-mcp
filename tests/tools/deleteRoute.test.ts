@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerDeleteRouteTool } from '../../src/tools/deleteRoute.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/deleteRoute', () => {
     let mockClient: OmadaClient;
@@ -28,9 +29,11 @@ describe('tools/deleteRoute', () => {
         registerDeleteRouteTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('deleteRoute');
-        expect(registeredConfig?.annotations?.destructiveHint).toBe(true);
+        expect(await catalogAnnotations('deleteRoute')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {

@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../../src/omadaClient/index.js';
 import { registerDeleteAlertLogsTool } from '../../src/tools/deleteAlertLogs.js';
+import { catalogAnnotations } from '../helpers/toolHarness.js';
 
 describe('tools/deleteAlertLogs', () => {
     let mockClient: OmadaClient;
@@ -28,9 +29,11 @@ describe('tools/deleteAlertLogs', () => {
         registerDeleteAlertLogsTool(mockServer, mockClient);
     });
 
-    it('registers the tool with the expected risk annotation', () => {
+    it('registers the tool with the catalog-forced destructive annotation', async () => {
         expect(registeredName).toBe('deleteAlertLogs');
-        expect(registeredConfig?.annotations?.destructiveHint).toBe(true);
+        expect(await catalogAnnotations('deleteAlertLogs')).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+        // A tool module must never declare itself read-only; the catalog derives the hints from its write permission.
+        expect(registeredConfig?.annotations).not.toMatchObject({ readOnlyHint: true });
     });
 
     it('defaults to a dry-run preview without mutating', async () => {

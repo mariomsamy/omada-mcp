@@ -3,7 +3,12 @@
  * (see NOTICE.md and docs/porting-skipped.md). Every route used by these tools was re-verified
  * against the bundled OpenAPI snapshots in docs/openapi/; none of them use private web APIs.
  */
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { z } from 'zod';
+
+import type { NestedKeySpec } from '../utils/openapiNestedKeys.js';
+import { isSensitiveField, maskValue } from '../utils/redact.js';
 
 const MAC_PATTERN = /^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$/;
 
@@ -159,17 +164,56 @@ export function checkPayloadBounds(value: unknown, context: z.RefinementCtx): vo
 }
 
 /**
+ * Reject keys that are not in the official OpenAPI component schema of a nested object (and,
+ * recursively, of its nested objects and array items). Map-typed objects have no spec and stay free-form.
+ */
+export function checkNestedKeys(value: unknown, spec: NestedKeySpec, path: (string | number)[], context: z.RefinementCtx): void {
+    if (Array.isArray(value)) {
+        value.forEach((item, index) => checkNestedKeys(item, spec, [...path, index], context));
+        return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    const unknownKeys = Object.keys(record).filter((key) => !spec.keys.includes(key));
+    if (unknownKeys.length > 0) {
+        context.addIssue({
+            code: 'unrecognized_keys',
+            keys: unknownKeys,
+            path,
+            message: `Unrecognized key(s) ${unknownKeys.map((key) => `"${key}"`).join(', ')}: not in the official Open API schema for this object.`,
+        });
+    }
+    for (const [key, child] of Object.entries(spec.children ?? {})) {
+        if (key in record) checkNestedKeys(record[key], child, [...path, key], context);
+    }
+}
+
+/**
  * Strict request body: only the keys of `shape` plus `allowedKeys` (taken from the official
  * OpenAPI component schema) are accepted; unknown keys are rejected rather than forwarded.
- * Values of allowlisted keys that are not modelled in `shape` are free-form but bounded by
- * {@link MAX_PAYLOAD_BYTES} and {@link MAX_PAYLOAD_DEPTH}.
+ * Values of allowlisted keys that are not modelled in `shape` are checked against `nested` (the
+ * generated nested allowlists in src/utils/openapiNestedKeys.ts) when given, and are always bounded
+ * by {@link MAX_PAYLOAD_BYTES} and {@link MAX_PAYLOAD_DEPTH}.
  */
-export function strictPayload<T extends z.ZodRawShape>(shape: T, allowedKeys: readonly string[]) {
+export function strictPayload<T extends z.ZodRawShape>(
+    shape: T,
+    allowedKeys: readonly string[],
+    nested?: Readonly<Record<string, NestedKeySpec>>
+): z.ZodObject<T, z.core.$strict> {
     const extra: Record<string, z.ZodOptional<z.ZodUnknown>> = {};
     for (const key of allowedKeys) {
         if (!(key in shape)) extra[key] = z.unknown().optional();
     }
-    return z.object(shape).extend(extra).strict().superRefine(checkPayloadBounds);
+    // The extra allowlisted keys are free-form (bounded below); only the modelled keys are typed.
+    return z
+        .object({ ...extra, ...shape })
+        .strict()
+        .superRefine((value, context) => {
+            checkPayloadBounds(value, context);
+            for (const [key, spec] of Object.entries(nested ?? {})) {
+                if (key in value) checkNestedKeys((value as Record<string, unknown>)[key], spec, [key], context);
+            }
+        }) as unknown as z.ZodObject<T, z.core.$strict>;
 }
 
 /** A nested JSON object restricted to the keys of its official OpenAPI component schema. */
@@ -219,7 +263,8 @@ function isPrivateIpv6(host: string): boolean {
 /**
  * Validate a webhook destination: https only, no embedded credentials, and no loopback,
  * private, link-local, CGNAT, multicast or local-only hostnames. Returns a reason when unsafe.
- * Hostnames are not resolved; a public name that resolves to a private address is not detected.
+ * This is the literal (synchronous) check; {@link checkWebhookDestination} adds DNS resolution
+ * and the optional OMADA_WEBHOOK_ALLOWED_HOSTS allowlist.
  */
 export function unsafeWebhookUrlReason(raw: string): string | undefined {
     let url: URL;
@@ -236,6 +281,113 @@ export function unsafeWebhookUrlReason(raw: string): string | undefined {
     if (isPrivateIpv4(host) || isPrivateIpv6(host)) return 'loopback, private, link-local and reserved addresses are not allowed';
     if (/^\d+$/.test(host) || /^0x/i.test(host)) return 'numeric host encodings are not allowed';
     return undefined;
+}
+
+/** Resolves a hostname to its IP addresses (IPv4 and IPv6). Injected in tests; never called for IP literals. */
+export type HostResolver = (host: string) => Promise<string[]>;
+
+const systemResolver: HostResolver = async (host) => (await lookup(host, { all: true, verbatim: true })).map((entry) => entry.address);
+
+export interface WebhookPolicy {
+    /** Optional allowlist (OMADA_WEBHOOK_ALLOWED_HOSTS): exact hosts, or "*.example.com" for subdomains. */
+    allowedHosts?: readonly string[];
+    resolve?: HostResolver;
+}
+
+let webhookPolicy: WebhookPolicy = {};
+
+/** Set the process-wide webhook destination policy (called once from registerAllTools with the loaded config). */
+export function configureWebhookPolicy(policy: WebhookPolicy): void {
+    webhookPolicy = {
+        ...webhookPolicy,
+        ...policy,
+        allowedHosts: policy.allowedHosts?.map((host) => host.trim().toLowerCase().replace(/\.$/, '')).filter(Boolean),
+    };
+}
+
+function hostAllowed(host: string, allowedHosts: readonly string[]): boolean {
+    return allowedHosts.some((entry) => (entry.startsWith('*.') ? host.endsWith(entry.slice(1)) && host.length > entry.length - 1 : host === entry));
+}
+
+/**
+ * Full webhook destination check: the literal rules of {@link unsafeWebhookUrlReason}, then the
+ * optional host allowlist, then DNS resolution: every address the host resolves to must be public.
+ * Unresolvable hosts are refused. The controller resolves the name again when it delivers, so this
+ * narrows but cannot fully close DNS-rebinding; the allowlist is the stronger control.
+ */
+export async function checkWebhookDestination(raw: string, policy: WebhookPolicy = webhookPolicy): Promise<string | undefined> {
+    const literal = unsafeWebhookUrlReason(raw);
+    if (literal) return literal;
+    const host = new URL(raw).hostname
+        .toLowerCase()
+        .replace(/\.$/, '')
+        .replace(/^\[|\]$/g, '');
+    if (policy.allowedHosts && policy.allowedHosts.length > 0 && !hostAllowed(host, policy.allowedHosts)) {
+        return 'host is not in OMADA_WEBHOOK_ALLOWED_HOSTS';
+    }
+    if (isIP(host) !== 0) return undefined;
+    let addresses: string[];
+    try {
+        addresses = await (policy.resolve ?? systemResolver)(host);
+    } catch {
+        return 'host could not be resolved';
+    }
+    if (addresses.length === 0) return 'host could not be resolved';
+    if (addresses.some((address) => isPrivateIpv4(address) || isPrivateIpv6(address))) {
+        return 'host resolves to a loopback, private, link-local or reserved address';
+    }
+    return undefined;
+}
+
+/** One planned field change in a dry-run preview. `before` is absent when the current value was not readable. */
+export interface FieldChange {
+    path: string;
+    before?: unknown;
+    planned: unknown;
+}
+
+export interface FieldDiff {
+    /** Fields whose planned value differs from the current one (secret values masked). */
+    changed: FieldChange[];
+    /** Number of planned fields that already have the planned value. */
+    unchangedCount: number;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Field-level before/planned diff for dry-run previews. Walks the planned (partial) body; nested
+ * objects are compared field by field, arrays and scalars as whole values. `base` selects the
+ * sub-object of `before` that the body updates (for example ['macFilter'] in an SSID detail).
+ * Values under secret-looking keys are masked; the comparison itself uses the real values.
+ */
+export function diffFields(before: unknown, planned: unknown, base: readonly string[] = []): FieldDiff {
+    let current: unknown = before;
+    for (const segment of base) current = isPlainObject(current) ? current[segment] : undefined;
+    const changed: FieldChange[] = [];
+    let unchangedCount = 0;
+    const walk = (plannedValue: unknown, currentValue: unknown, path: string[], parentKey: string | undefined, secret: boolean): void => {
+        if (isPlainObject(plannedValue)) {
+            for (const [key, value] of Object.entries(plannedValue)) {
+                const nestedSecret = secret || isSensitiveField(key, parentKey, plannedValue);
+                walk(value, isPlainObject(currentValue) ? currentValue[key] : undefined, [...path, key], key, nestedSecret);
+            }
+            return;
+        }
+        if (currentValue !== undefined && JSON.stringify(currentValue) === JSON.stringify(plannedValue)) {
+            unchangedCount += 1;
+            return;
+        }
+        changed.push({
+            path: path.join('.'),
+            ...(currentValue === undefined ? {} : { before: secret ? maskValue(currentValue) : currentValue }),
+            planned: secret ? maskValue(plannedValue) : plannedValue,
+        });
+    };
+    walk(planned, current, [], undefined, false);
+    return { changed, unchangedCount };
 }
 
 /** Normalize list results that arrive either as arrays or as paginated `{ data: [] }` objects. */
@@ -258,6 +410,24 @@ export async function requireExistingRecord(
     const record = extractRecords(await load()).find((item) => idKeys.some((key) => item[key] === id));
     if (!record) {
         throw new Error(`${label} ${id} was not found in the selected site; refusing to mutate an unknown resource.`);
+    }
+    return record;
+}
+
+/** Canonical MAC form for comparisons: upper case with "-" separators. */
+export function normalizeMac(mac: string): string {
+    return mac.trim().toUpperCase().replace(/:/g, '-');
+}
+
+/**
+ * Preflight: require a device with this MAC in a read-endpoint result (site device list or pending
+ * list). `hint` explains which read tool to use. MAC separators and case are normalized.
+ */
+export async function requireDeviceByMac(load: () => Promise<unknown>, mac: string, hint: string): Promise<Record<string, unknown>> {
+    const wanted = normalizeMac(mac);
+    const record = extractRecords(await load()).find((item) => typeof item.mac === 'string' && normalizeMac(item.mac) === wanted);
+    if (!record) {
+        throw new Error(`Device ${mac} ${hint}; refusing to send the request.`);
     }
     return record;
 }
@@ -467,7 +637,7 @@ export async function assessWebhookChange(
         }
         const urls = Array.isArray(profile.urlList) ? profile.urlList.filter((url): url is string => typeof url === 'string') : [];
         for (const url of urls) {
-            const reason = unsafeWebhookUrlReason(url);
+            const reason = await checkWebhookDestination(url);
             if (reason) {
                 throw new Error(`Webhook profile ${effectiveId} delivers to ${hostOf(url)}, which is not allowed: ${reason}.`);
             }

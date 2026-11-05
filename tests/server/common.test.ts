@@ -8,6 +8,7 @@ import {
     setupServerLogging,
     siteInputSchema,
     stackIdSchema,
+    summarizeArgsForInfo,
     toMutationResult,
     toToolResult,
     wrapMutationToolHandler,
@@ -300,6 +301,51 @@ describe('server/common', () => {
 
             const result = await handler?.({ method: 'resources/list' }, { requestId: 'test-request' });
             expect(result).toEqual({ resources: [] });
+        });
+    });
+
+    describe('summarizeArgsForInfo (L5: personal data stays out of info logs)', () => {
+        it('keeps only identifier fields with MAC and IP values replaced, plus argument names', () => {
+            expect(
+                summarizeArgsForInfo({
+                    siteId: 'site-1',
+                    deviceMac: 'AA-BB-CC-DD-EE-FF',
+                    clientMac: 'AA:BB:CC:DD:EE:01',
+                    networkId: 'net-1',
+                    dryRun: true,
+                    name: 'Living room laptop',
+                    payload: { ip: '192.168.0.10' },
+                    gatewayId: '10.0.0.1',
+                    clientSecret: 'never-logged',
+                })
+            ).toEqual({
+                argNames: ['clientMac', 'clientSecret', 'deviceMac', 'dryRun', 'gatewayId', 'name', 'networkId', 'payload', 'siteId'],
+                identifiers: { siteId: 'site-1', networkId: 'net-1', dryRun: true, gatewayId: '[ip]' },
+            });
+        });
+
+        it('handles non-object arguments', () => {
+            expect(summarizeArgsForInfo(undefined)).toEqual({});
+            expect(summarizeArgsForInfo([1])).toEqual({});
+            expect(summarizeArgsForInfo({})).toEqual({ argNames: [] });
+        });
+
+        it('logs full (secret-masked) arguments at debug level only', async () => {
+            const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+            const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+            const wrapped = wrapToolHandler(
+                'pii-tool',
+                vi.fn(async () => toToolResult({ ok: true }))
+            );
+            await wrapped({ clientMac: 'AA-BB-CC-DD-EE-FF', name: 'Alice phone', password: 'x' }, createToolExtra({ sessionId: 's' }));
+            const infoText = JSON.stringify(infoSpy.mock.calls);
+            expect(infoText).not.toContain('AA-BB-CC-DD-EE-FF');
+            expect(infoText).not.toContain('Alice phone');
+            expect(debugSpy).toHaveBeenCalledWith(
+                'Tool arguments',
+                expect.objectContaining({ tool: 'pii-tool', args: expect.stringContaining('Alice phone') })
+            );
+            expect(JSON.stringify(debugSpy.mock.calls)).not.toContain('"x"');
         });
     });
 

@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { OPENAPI_BODY_KEYS, objectPayloadSchema } from './portedToolShared.js';
+import { diffFields, OPENAPI_BODY_KEYS, objectPayloadSchema } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     payload: z
@@ -49,7 +49,7 @@ export function registerUpdateBeaconControlTool(server: McpServer, client: Omada
             async ({ payload, siteId, customHeaders, dryRun }) => {
                 const before = await client.getBeaconControlSetting(siteId, customHeaders);
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, before, plannedConfig: payload };
+                    return { accepted: true, dryRun: true, before, plannedConfig: payload, diff: diffFields(before, payload) };
                 }
                 const applied = await client.updateBeaconControlSetting(payload, siteId, customHeaders);
                 return { before, applied };

@@ -31,7 +31,7 @@ The plain `safe-read` defaults do not include `wireless-radio`, so
 `getWifiHealthSummary`, `getChannels` and `getInterference` would be
 missing.
 
-Tool names are as registered by safe-omada-mcp; your client may prefix
+Tool names are as registered by omada-mcp; your client may prefix
 them. In compact catalog mode call them through `callOperation`.
 
 ## Tools

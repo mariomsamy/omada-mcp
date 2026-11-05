@@ -6,6 +6,51 @@ an implementation tracker, and a reference for coding agents.
 
 **Historical specification operations:** 1648. The checkmarks and category tallies below are a baseline snapshot, not a current runtime inventory or a controller compatibility guarantee. Several tools compose multiple routes; aliases share routes. After building, `node scripts/check-readme-sync.mjs` enumerates unique runtime tools. The 0.19 additions and validation limits are tracked in [the release plan](docs/operations/0.19-release-plan.md).
 
+## Runtime inventory (1.0.0)
+
+Counted from the registered catalog of version 1.0.0 (default settings, so the 28 hidden deprecated aliases are excluded):
+**398 operations: 309 read and 89 write tools**, plus 4 discovery tools (`searchOperations`, `describeOperation`,
+`getServerCapabilities`, and `callOperation` in compact mode). Every write tool is covered by the stub-controller
+test in `tests/integration/writeToolRequests.test.ts` (dry run sends no mutating request; apply sends the documented
+method and path). Categories reserved for future phases (`insights`, `network-sim-lte`, `account-sso`, the
+`hotspot-*` categories, `voip`, `olt`, `msp`) have no tools yet.
+
+| Category | Read tools | Write tools |
+| --- | ---: | ---: |
+| `dashboard` | 12 | 0 |
+| `client-insights` | 7 | 0 |
+| `clients` | 4 | 7 |
+| `devices-general` | 19 | 4 |
+| `devices-ap` | 20 | 4 |
+| `devices-switch` | 14 | 3 |
+| `devices-gateway` | 9 | 2 |
+| `wireless-ssid` | 6 | 9 |
+| `wireless-radio` | 13 | 9 |
+| `wireless-auth` | 7 | 0 |
+| `network-wan` | 13 | 1 |
+| `network-lan` | 14 | 5 |
+| `network-routing` | 8 | 3 |
+| `network-nat` | 3 | 3 |
+| `network-services` | 15 | 3 |
+| `firewall-acl` | 12 | 9 |
+| `firewall-traffic` | 13 | 5 |
+| `firewall-ids` | 2 | 1 |
+| `security-threat` | 6 | 0 |
+| `security-wids` | 3 | 0 |
+| `vpn` | 22 | 0 |
+| `profiles` | 19 | 0 |
+| `schedules` | 6 | 6 |
+| `auth-profiles` | 4 | 0 |
+| `logs` | 13 | 6 |
+| `controller` | 19 | 0 |
+| `sites` | 11 | 1 |
+| `maintenance` | 6 | 4 |
+| `recovery` | 0 | 4 |
+| `account-users` | 5 | 0 |
+| `account-cloud` | 4 | 0 |
+
+The per-category "implemented" tallies in the table of contents below are the historical specification baseline (operations derivable from the spec), not the runtime count above.
+
 ## Table of Contents
 
 - [dashboard](#dashboard) (11/19 implemented)

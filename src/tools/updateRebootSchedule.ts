@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { rebootScheduleSchema, requireExistingRecord, resourceIdSchema } from './portedToolShared.js';
+import { diffFields, rebootScheduleSchema, requireExistingRecord, resourceIdSchema } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     scheduleId: resourceIdSchema('scheduleId').describe('reboot schedule ID.'),
@@ -48,7 +48,7 @@ export function registerUpdateRebootScheduleTool(server: McpServer, client: Omad
                     'Reboot schedule'
                 );
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, before, plannedConfig: schedule };
+                    return { accepted: true, dryRun: true, before, plannedConfig: schedule, diff: diffFields(before, schedule) };
                 }
                 const applied = await client.modifyRebootSchedule(scheduleId, schedule, siteId, customHeaders);
                 return { before, applied };

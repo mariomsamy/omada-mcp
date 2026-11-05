@@ -397,6 +397,50 @@ describe('config', () => {
     });
 });
 
+describe('loadConfigFromEnv (profile versus explicit categories)', () => {
+    const base = {
+        OMADA_BASE_URL: 'https://controller.example.com',
+        OMADA_CLIENT_ID: 'client-id',
+        OMADA_CLIENT_SECRET: 'client-secret',
+        OMADA_OMADAC_ID: 'omadac-id',
+    };
+
+    it('reports profile "custom" and warns when OMADA_TOOL_CATEGORIES overrides OMADA_CAPABILITY_PROFILE', () => {
+        const config = loadConfigFromEnv({ ...base, OMADA_CAPABILITY_PROFILE: 'admin', OMADA_TOOL_CATEGORIES: 'dashboard:r' } as NodeJS.ProcessEnv);
+        expect(config.capabilityProfile).toBe('custom');
+        expect(config.requestedCapabilityProfile).toBe('admin');
+        expect(config.toolCategories.get('dashboard')).toEqual(new Set(['read']));
+        expect(config.toolCategories.has('clients')).toBe(false);
+        expect(config.startupWarnings).toContainEqual(expect.stringContaining('OMADA_TOOL_CATEGORIES overrides OMADA_CAPABILITY_PROFILE=admin'));
+    });
+
+    it('reports profile "custom" without a warning when only OMADA_TOOL_CATEGORIES is set', () => {
+        const config = loadConfigFromEnv({ ...base, OMADA_TOOL_CATEGORIES: 'dashboard:r' } as NodeJS.ProcessEnv);
+        expect(config.capabilityProfile).toBe('custom');
+        expect(config.requestedCapabilityProfile).toBe('safe-read');
+        expect(config.startupWarnings.some((warning) => warning.includes('overrides'))).toBe(false);
+    });
+
+    it('parses OMADA_WEBHOOK_ALLOWED_HOSTS and rejects URLs or ports in it (M3)', () => {
+        expect(loadConfigFromEnv({ ...base } as NodeJS.ProcessEnv).webhookAllowedHosts).toBeUndefined();
+        expect(
+            loadConfigFromEnv({ ...base, OMADA_WEBHOOK_ALLOWED_HOSTS: 'hooks.example.com, *.alerts.example.net' } as NodeJS.ProcessEnv)
+                .webhookAllowedHosts
+        ).toEqual(['hooks.example.com', '*.alerts.example.net']);
+        for (const bad of ['https://hooks.example.com', 'hooks.example.com:443', 'hooks.example.com/path']) {
+            expect(() => loadConfigFromEnv({ ...base, OMADA_WEBHOOK_ALLOWED_HOSTS: bad } as NodeJS.ProcessEnv)).toThrow(
+                'OMADA_WEBHOOK_ALLOWED_HOSTS'
+            );
+        }
+    });
+
+    it('keeps the named profile when OMADA_TOOL_CATEGORIES is unset', () => {
+        const config = loadConfigFromEnv({ ...base, OMADA_CAPABILITY_PROFILE: 'ops-write' } as NodeJS.ProcessEnv);
+        expect(config.capabilityProfile).toBe('ops-write');
+        expect(config.requestedCapabilityProfile).toBe('ops-write');
+    });
+});
+
 describe('parseToolCategories', () => {
     it('should return empty categories and no warnings for empty string', () => {
         const { categories, warnings } = parseToolCategories('');

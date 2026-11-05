@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
+import { OPENAPI_NESTED_KEYS } from '../utils/openapiNestedKeys.js';
 import { OPENAPI_BODY_KEYS, requireExistingRecord, resourceIdSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
@@ -12,10 +13,11 @@ const inputSchema = siteInputSchema.extend({
         {
             name: z.string().min(1).max(64),
             status: z.boolean(),
-            forwardIp: z.string().ip({ version: 'v4' }),
+            forwardIp: z.ipv4(),
             dMZ: z.boolean().describe('DMZ opens all ports to forwardIp; keep false unless intended.'),
         },
-        OPENAPI_BODY_KEYS.portForwarding
+        OPENAPI_BODY_KEYS.portForwarding,
+        OPENAPI_NESTED_KEYS.portForwarding
     ).describe('Port forwarding request body per the official Omada Open API schema; nested fields are validated by the controller.'),
     dryRun: z
         .boolean()

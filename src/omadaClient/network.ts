@@ -51,7 +51,7 @@ const ssidPpskSettingOpenApiVOSchema = z
 const ssidVlanCustomSettingOpenApiVOSchema = z
     .object({
         customMode: z.number().int(),
-        lanNetworkVlanIds: z.record(z.array(z.number().int())).optional(),
+        lanNetworkVlanIds: z.record(z.string(), z.array(z.number().int())).optional(),
         vlanPoolIds: z.string().optional(),
     })
     .strip();

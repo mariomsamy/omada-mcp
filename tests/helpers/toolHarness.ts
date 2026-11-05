@@ -30,3 +30,20 @@ export function toolHarness(
         },
     };
 }
+
+/**
+ * Effective MCP annotations of a tool as registered through the catalog (registerAllTools with every
+ * category enabled). The catalog forces readOnlyHint/destructiveHint from the tool permission, so
+ * per-tool tests assert these rather than the raw annotations passed by the tool module.
+ */
+export async function catalogAnnotations(toolName: string): Promise<Record<string, unknown> | undefined> {
+    const [{ parseToolCategories }, { registerAllTools }] = await Promise.all([import('../../src/config.js'), import('../../src/tools/index.js')]);
+    let annotations: Record<string, unknown> | undefined;
+    const server = {
+        registerTool(name: string, config: { annotations?: Record<string, unknown> }) {
+            if (name === toolName) annotations = config.annotations;
+        },
+    };
+    registerAllTools(server as unknown as McpServer, {} as OmadaClient, parseToolCategories('all:rw,recovery:rw').categories);
+    return annotations;
+}

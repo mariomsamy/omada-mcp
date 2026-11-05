@@ -2,7 +2,7 @@
 name: omada-safe-change
 description: |
   TRIGGER whenever the operator wants to change anything on an Omada
-  controller through safe-omada-mcp: an SSID, an AP radio, a switch port,
+  controller through omada-mcp: an SSID, an AP radio, a switch port,
   roaming or band steering, a LAN, route, port forward, schedule, client
   block or rate limit, a reboot, a firmware upgrade, a backup. Covers the
   mandatory dry-run -> review -> apply -> read-back loop and which
@@ -21,11 +21,11 @@ description: |
 ## Goal
 
 Make one controlled change at a time, with evidence before and after.
-Every write tool in safe-omada-mcp defaults to `dryRun: true`; this skill
+Every write tool in omada-mcp defaults to `dryRun: true`; this skill
 is the procedure for turning a preview into an applied, verified change
 without ever skipping the human review step.
 
-Tool names below are the names safe-omada-mcp registers. Your MCP client
+Tool names below are the names omada-mcp registers. Your MCP client
 may prefix them (for example `mcp__safe-omada__setApRadio`). In
 `OMADA_CATALOG_MODE=compact` call them through `searchOperations` ->
 `describeOperation` -> `callOperation`.

@@ -10,7 +10,7 @@ A clear and concise description of what the bug is.
 
 ## Environment
 
-- Safe Omada MCP version: <!-- e.g. 0.16.0 -->
+- Omada MCP version: <!-- e.g. 1.0.0 -->
 - Omada controller version: <!-- e.g. 6.3.6 (Software Controller) -->
 - Node.js version (if running locally): <!-- e.g. 24.0.0 -->
 - Transport: <!-- stdio / Docker -->

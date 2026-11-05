@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
+import { OPENAPI_NESTED_KEYS } from '../utils/openapiNestedKeys.js';
 import { OPENAPI_BODY_KEYS, resourceIdSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
@@ -14,7 +15,8 @@ const inputSchema = siteInputSchema.extend({
                 'WanPortSettingOpenApiVO: portId, wanPortIpv4Setting, wanPortIpv6Setting and wanPortMacSetting per the official schema.'
             ),
         },
-        OPENAPI_BODY_KEYS.internetPort
+        OPENAPI_BODY_KEYS.internetPort,
+        OPENAPI_NESTED_KEYS.internetPort
     ).describe('modifyWanPortSettings request body.'),
     dryRun: z
         .boolean()

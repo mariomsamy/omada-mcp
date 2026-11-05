@@ -1,7 +1,7 @@
-# Safe Omada MCP
+# Omada MCP
 
 [![CI](https://github.com/mariomsamy/omada-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/mariomsamy/omada-mcp/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/safe-omada-mcp)](https://www.npmjs.com/package/safe-omada-mcp)
+[![npm version](https://img.shields.io/npm/v/omada-mcp)](https://www.npmjs.com/package/omada-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node.js 24+](https://img.shields.io/badge/node-24%2B-green)](https://nodejs.org)
 
@@ -39,9 +39,9 @@ holds no secrets):
 ```json
 {
   "mcpServers": {
-    "safe-omada": {
+    "omada": {
       "command": "node",
-      "args": ["/absolute/path/to/safe-omada-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/omada-mcp/dist/index.js"],
       "env": {
         "OMADA_BASE_URL": "${OMADA_BASE_URL}",
         "OMADA_CLIENT_ID": "${OMADA_CLIENT_ID}",
@@ -58,11 +58,11 @@ holds no secrets):
 Claude Code one-liner:
 
 ```bash
-claude mcp add safe-omada --scope user \
+claude mcp add omada --scope user \
   -e OMADA_BASE_URL=https://<controller-host>:8043 -e OMADA_CLIENT_ID=<client-id> \
   -e OMADA_CLIENT_SECRET=<client-secret> -e OMADA_OMADAC_ID=<omadac-id> \
   -e OMADA_STRICT_SSL=true -e OMADA_CAPABILITY_PROFILE=safe-read \
-  -- node /absolute/path/to/safe-omada-mcp/dist/index.js
+  -- node /absolute/path/to/omada-mcp/dist/index.js
 ```
 
 Claude Desktop does not expand `${VAR}`; put placeholder-replaced values
@@ -100,7 +100,8 @@ narrowest categories you need (for example `all:r,wireless-radio:rw`).
 - **Read-only by default.** Write tools are not even registered unless
   the profile or categories grant them.
 - **Dry run by default.** Every write returns a preview (`planned`)
-  unless called with `dryRun: false`.
+  unless called with `dryRun: false`. A preview sends no mutating
+  request (only reads), and update previews include a field-level diff.
 - **Read-back.** Key writes verify the controller state afterwards and
   report `verified`, `mismatch`, `unknown`, `unverifiable` or `partial`;
   others report `submitted` and should be read back (see the
@@ -149,24 +150,18 @@ review), `omada-safe-change` (dry-run -> review -> apply -> read-back),
 - HTTP remains in the codebase only as an explicitly unsafe, lab-only path
 - Uses documented Open API routes; controller/device validation is operation-specific (see [support matrix](docs/support-matrix.md))
 
-## 0.19 release candidate
+## 1.0.0
 
-This branch prepares `0.19.0-rc.1`. Write previews, compact discovery, diagnostics and reliability changes are described in the [migration guide](docs/operations/0.19-migration.md). Stable write-tool release awaits disposable-controller and hardware validation; `latest` remains the existing stable version.
+Version 1.0.0 moves to zod 4 (fixing GHSA-mrhx-c7xc-m3w5), adds DNS and allowlist checks for webhook destinations, nested payload allowlists and field-level dry-run diffs, read-only preflights for more writes, and keeps client MACs and IPs out of info-level logs. See [CHANGELOG.md](CHANGELOG.md). Write tools are checked against a stub controller in tests but have not all been validated against a live controller; see the [support matrix](docs/support-matrix.md) and the 0.19 [migration guide](docs/operations/0.19-migration.md) for verification limits.
 
 ## Quick Start
 
 ### Option 1: Use with Claude Desktop via Docker
 
-1. Pull or build an image:
+1. Build the image (no prebuilt image is published):
 
    ```bash
    docker build -t omada-mcp:local .
-   ```
-
-   If you do not publish an image yet, build locally instead:
-
-   ```bash
-   npm run docker:build
    ```
 
 2. Edit your Claude Desktop MCP config:
@@ -178,12 +173,15 @@ This branch prepares `0.19.0-rc.1`. Write previews, compact discovery, diagnosti
    ```json
    {
      "mcpServers": {
-       "safe-omada": {
+       "omada": {
          "command": "docker",
          "args": [
            "run",
            "-i",
            "--rm",
+           "--read-only",
+           "--cap-drop=ALL",
+           "--security-opt", "no-new-privileges",
            "-e", "OMADA_BASE_URL=https://your-omada-controller.local",
            "-e", "OMADA_CLIENT_ID=your-client-id",
            "-e", "OMADA_CLIENT_SECRET=your-client-secret",
@@ -202,10 +200,13 @@ This branch prepares `0.19.0-rc.1`. Write previews, compact discovery, diagnosti
 ### Option 2: Run the container directly
 
 ```bash
-docker run --rm -it \
+docker run --rm -i \
+  --read-only --cap-drop=ALL --security-opt no-new-privileges \
   --env-file .env \
   omada-mcp:local
 ```
+
+Recommended hardening: `--read-only` (the server writes nothing to disk), `--cap-drop=ALL` (it needs no Linux capabilities) and `--security-opt no-new-privileges`. The image already runs as a non-root user. Mount a private CA bundle read-only (`-v /path/ca.pem:/certs/ca.pem:ro -e OMADA_CA_FILE=/certs/ca.pem`).
 
 ### Option 3: Run locally for development
 
@@ -237,7 +238,8 @@ The server reads configuration from environment variables. See `.env.example` fo
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `OMADA_CAPABILITY_PROFILE` | No | `safe-read` | Built-in profile: `safe-read`, `ops-write`, `admin`, `compatibility` |
-| `OMADA_TOOL_CATEGORIES` | No | profile default | Explicit category override; recovery requires `recovery:rw` |
+| `OMADA_TOOL_CATEGORIES` | No | profile default | Explicit category override; recovery requires `recovery:rw`. When set, the effective profile is `custom` |
+| `OMADA_WEBHOOK_ALLOWED_HOSTS` | No | - | Optional allowlist of webhook destination hosts (`hooks.example.com,*.alerts.example.net`) for the log/audit notification tools |
 | `OMADA_CATALOG_MODE` | No | `standard` | `standard` tools or `compact` discovery/dispatch |
 | `OMADA_INCLUDE_DEPRECATED` | No | `false` | Include deprecated aliases |
 | `OMADA_ALLOW_TOOL_HEADERS` | No | `false` | Expose only bounded `X-Request-ID` / `X-Correlation-ID` headers |
@@ -253,13 +255,19 @@ The server reads configuration from environment variables. See `.env.example` fo
 | `admin` | All implemented categories except recovery |
 | `compatibility` | Deprecated alias for `admin`; no private API fallback |
 
-`OMADA_TOOL_CATEGORIES` replaces profile defaults. Restore tools require explicit `recovery:rw`; neither `admin`, `compatibility`, nor `all:rw` grants recovery.
+`OMADA_TOOL_CATEGORIES` replaces profile defaults; the server then reports profile `custom` (in `getServerCapabilities` and the startup log) and logs a warning if `OMADA_CAPABILITY_PROFILE` was also set. Restore tools require explicit `recovery:rw`; neither `admin`, `compatibility`, nor `all:rw` grants recovery.
 
 ### Mutation previews and recovery
 
-Writes default to `dryRun: true`. Review the preview and explicitly pass `dryRun: false` to apply. `submitted` means the controller accepted a request; only `verified` indicates a matching readback. See the [0.19 migration guide](docs/operations/0.19-migration.md) for verification limits and partial outcomes.
+Writes default to `dryRun: true`. A dry run sends read requests only (preflight and current-state reads) and **no mutating request**; update tools whose current value is readable include a field-level `diff` (`changed[]` with `path`, `before`, `planned`, secrets masked). Review the preview and explicitly pass `dryRun: false` to apply. `submitted` means the controller accepted a request; only `verified` indicates a matching readback. See the [0.19 migration guide](docs/operations/0.19-migration.md) for verification limits and partial outcomes.
+
+Log and audit notification webhooks (`updateLogNotificationSettings`, `updateAuditNotificationSettings`) can send client MACs, IPs and host names off-network. Applying a webhook change requires `confirmWebhookChange: true`. Every destination of the referenced webhook profile must be `https`, must not be a private, loopback or link-local literal, must resolve only to public addresses, and, when `OMADA_WEBHOOK_ALLOWED_HOSTS` is set, must be on that list.
 
 Restore tools also require `confirmDangerous: true`. This is an argument check, not enforced human approval or a stateful second-call protocol. Configure approvals in the MCP host and grant `recovery:rw` only when recovery is intended.
+
+### Logs and personal data
+
+At `info` level a tool call logs the tool name, the argument names and identifier fields only (site, resource IDs, `dryRun`), and Omada request URLs have client MAC and IP addresses replaced by `[mac]` and `[ip]`. Full, secret-masked arguments and URLs are logged only at `debug`. Mutation audit events log action, target, site, mode and status. Keep log retention short; see [docs/security-model.md](docs/security-model.md#log-retention).
 
 ### Optional HTTP Lab Mode
 
@@ -281,7 +289,8 @@ Use it only for local lab/debug scenarios.
 | `MCP_HTTP_ENABLE_HEALTHCHECK` | No | `true` | Enable health check |
 | `MCP_HTTP_HEALTHCHECK_PATH` | No | `/healthz` | Health check path |
 | `MCP_HTTP_ALLOW_CORS` | No | `true` | Enable CORS |
-| `MCP_HTTP_ALLOWED_ORIGINS` | No | `127.0.0.1, localhost` | Allowed origins |
+| `MCP_HTTP_BEARER_TOKEN` | Yes (HTTP only) | - | Required bearer token, at least 32 characters (for example `openssl rand -hex 32`); the HTTP transport never runs unauthenticated |
+| `MCP_HTTP_ALLOWED_ORIGINS` | No | `127.0.0.1, localhost` | Allowed origins; `*` is refused when HTTP is enabled |
 | `MCP_HTTP_NGROK_ENABLED` | No | `false` | Legacy placeholder; disabled in safe baseline |
 | `MCP_HTTP_NGROK_AUTH_TOKEN` | No | - | Legacy placeholder |
 
@@ -296,7 +305,6 @@ Use it only for local lab/debug scenarios.
 | Lint + type-check | `npm run check` |
 | Unit tests | `npm test` |
 | Coverage gates | `npm run test:coverage` |
-| Symlink integrity | `npm run symlinks:check` |
 | README/tool sync | `node scripts/check-readme-sync.mjs` |
 | Tool/test mapping | `node scripts/check-tool-tests.mjs` |
 
@@ -360,9 +368,9 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 
 | Tool | Category | Risk | Description |
 |---|---|---|---|
-| `adoptDevice` | `devices-general` | write | Starts adoption of a pending device; optional device credentials are never echoed. |
-| `startCableTest` | `devices-switch` | destructive | Starts a cable test on explicit switch ports (may briefly interrupt link); read results with getCableTestFullResults. |
-| `startFirmwareUpgrade` | `devices-general` | destructive | Starts an online firmware upgrade of one device (device reboots); preview shows current firmware info. Admin profile only. |
+| `adoptDevice` | `devices-general` | write | Starts adoption of a pending device after checking it is in the site's pending list; optional device credentials are never echoed. |
+| `startCableTest` | `devices-switch` | destructive | Starts a cable test on explicit switch ports of a switch known to the site (may briefly interrupt link); read results with getCableTestFullResults. |
+| `startFirmwareUpgrade` | `devices-general` | destructive | Starts an online firmware upgrade of one device known to the site (device reboots); preview shows the device and current firmware info. Admin profile only. |
 | `setSwitchNetworks` | `devices-switch` | destructive | Batch modifies switch VLAN interfaces with a preview of the current list. Admin profile only. |
 | `setGatewayWanConnect` | `devices-gateway` | destructive | Connects or disconnects a gateway WAN port; disconnecting can take the site offline. Admin profile only. |
 | `updateWanPortSetting` | `network-wan` | destructive | Modifies one WAN port's settings with a preview of the current WAN configuration. Admin profile only. |
@@ -379,7 +387,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | `createRoute` | `network-routing` | destructive | Creates a static route with dry-run preview. Admin profile only. |
 | `updateRoute` | `network-routing` | destructive | Updates an existing static route after an existence preflight; preview shows the current record. Admin profile only. |
 | `deleteRoute` | `network-routing` | destructive | Deletes an existing static route after an existence preflight. Admin profile only. |
-| `createSsid` | `wireless-ssid` | write | Creates an SSID in a WLAN group with dry-run preview; secrets are redacted from output. |
+| `createSsid` | `wireless-ssid` | write | Creates an SSID in an existing WLAN group (checked first) with dry-run preview; secrets are redacted from output. |
 | `deleteSsid` | `wireless-ssid` | destructive | Deletes an SSID (clients disconnect); preview shows the current SSID detail. Admin profile only. |
 | `updateSsidHotspotV2` | `wireless-ssid` | write | Updates SSID Hotspot 2.0 with a preview of the current SSID detail. |
 | `updateSsidMacFilter` | `wireless-ssid` | destructive | Updates SSID MAC filter settings with a preview of the current SSID detail. Admin profile only. |
@@ -407,8 +415,8 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | `deleteEventLogs` | `logs` | destructive | Permanently deletes event logs (site or global); broad selections need explicit confirmation. Admin profile only. |
 | `resolveAlertLogs` | `logs` | write | Marks site alert logs as resolved; broad selections need explicit confirmation. |
 | `resetLogNotificationSettings` | `logs` | destructive | Resets log notification settings to defaults (site or global); preview shows current settings. Admin profile only. |
-| `updateLogNotificationSettings` | `logs` | write | Modifies log notification settings (site or global, v2 route) with a preview of the current settings. |
-| `updateAuditNotificationSettings` | `logs` | destructive | Modifies audit log notification settings (site or global) with preview. Admin profile only. |
+| `updateLogNotificationSettings` | `logs` | write | Modifies log notification settings (site or global, v2 route) with a preview of the current settings; a webhook change needs `confirmWebhookChange: true` and public https destinations. |
+| `updateAuditNotificationSettings` | `logs` | destructive | Modifies audit log notification settings (site or global) with preview; a webhook change needs `confirmWebhookChange: true`. Admin profile only. |
 
 </details>
 
@@ -462,7 +470,7 @@ Site listing, client monitoring, and client-level operational controls (rate lim
 | Tool | Description |
 |---|---|
 | `rebootDevice` | Reboots a managed device with an auditable mutation summary. |
-| `setDeviceLed` | Changes a device LED state with an auditable mutation summary. |
+| `setDeviceLed` | Changes the LED of one AP, switch or gateway through its documented general-config route, after confirming the device and its type. |
 
 </details>
 

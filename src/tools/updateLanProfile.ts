@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
+import { OPENAPI_NESTED_KEYS } from '../utils/openapiNestedKeys.js';
 import { OPENAPI_BODY_KEYS, requireExistingRecord, resourceIdSchema, specNameSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
@@ -14,7 +15,8 @@ const inputSchema = siteInputSchema.extend({
             poe: z.union([z.literal(0), z.literal(1), z.literal(2)]).describe('0: on, 1: off, 2: do not modify.'),
             nativeNetworkId: resourceIdSchema('nativeNetworkId'),
         },
-        OPENAPI_BODY_KEYS.lanProfile
+        OPENAPI_BODY_KEYS.lanProfile,
+        OPENAPI_NESTED_KEYS.lanProfile
     ).describe('LAN profile request body per the official Omada Open API schema; nested fields are validated by the controller.'),
     dryRun: z
         .boolean()

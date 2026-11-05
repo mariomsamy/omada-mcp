@@ -464,4 +464,17 @@ describe('RequestHandler', () => {
             expect(() => handler.ensureSuccess(data as never)).toThrow('Malformed Omada API response');
         });
     });
+    it('strips client MACs and IPs from info-level request logs but keeps them at debug level', async () => {
+        await settle(handler.get('/openapi/v1/omadac/sites/s1/clients/AA-BB-CC-DD-EE-FF', { searchKey: '192.168.1.20', siteId: 's1' }));
+        expect(logger.info).toHaveBeenCalledWith(
+            'Omada request',
+            expect.objectContaining({ url: '/openapi/v1/omadac/sites/s1/clients/[mac]', params: { searchKey: '[ip]', siteId: 's1' } })
+        );
+        expect(logger.info).toHaveBeenCalledWith('Omada response', expect.objectContaining({ url: '/openapi/v1/omadac/sites/s1/clients/[mac]' }));
+        expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toMatch(/AA-BB-CC-DD-EE-FF|192\.168\.1\.20/);
+        expect(logger.debug).toHaveBeenCalledWith(
+            'Omada request details',
+            expect.objectContaining({ url: '/openapi/v1/omadac/sites/s1/clients/AA-BB-CC-DD-EE-FF' })
+        );
+    });
 });

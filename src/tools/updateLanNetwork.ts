@@ -4,7 +4,8 @@ import { z } from 'zod';
 
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, wrapMutationToolHandler } from '../server/common.js';
-import { OPENAPI_BODY_KEYS, requireExistingRecord, resourceIdSchema, strictPayload } from './portedToolShared.js';
+import { OPENAPI_NESTED_KEYS } from '../utils/openapiNestedKeys.js';
+import { diffFields, OPENAPI_BODY_KEYS, requireExistingRecord, resourceIdSchema, strictPayload } from './portedToolShared.js';
 
 const inputSchema = siteInputSchema.extend({
     networkId: resourceIdSchema('networkId').describe('LAN network ID to update.'),
@@ -13,7 +14,8 @@ const inputSchema = siteInputSchema.extend({
             name: z.string().min(1).max(128),
             purpose: z.union([z.literal(0), z.literal(1)]).describe('0: VLAN, 1: interface.'),
         },
-        OPENAPI_BODY_KEYS.lanNetwork
+        OPENAPI_BODY_KEYS.lanNetwork,
+        OPENAPI_NESTED_KEYS.lanNetwork
     ).describe(
         'LAN network (v2 createLanNetworkV2/modifyLanNetworkV2) request body per the official Omada Open API schema; nested fields are validated by the controller.'
     ),
@@ -52,7 +54,7 @@ export function registerUpdateLanNetworkTool(server: McpServer, client: OmadaCli
             async ({ networkId, payload, siteId, customHeaders, dryRun }) => {
                 const before = await requireExistingRecord(() => client.getLanNetworkList(siteId, customHeaders), networkId, 'LAN network', ['id']);
                 if (dryRun) {
-                    return { accepted: true, dryRun: true, before, plannedConfig: payload };
+                    return { accepted: true, dryRun: true, before, plannedConfig: payload, diff: diffFields(before, payload) };
                 }
                 const applied = await client.modifyLanNetwork(networkId, payload, siteId, customHeaders);
                 return { before, applied };

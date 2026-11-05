@@ -63,22 +63,36 @@ authentication and supply chain) found 0 critical, 1 high, 6 medium,
 | M6 | CI, publish and Docker supply-chain gaps (lifecycle scripts during publish, tag-pinned actions, no audit gate, unpinned base image) | **CI/Docker hardening** |
 | L7 | Ported tool tests were largely shallow | **Real tests:** behaviour tests for the ported tools |
 
-### Known limitations (not fixed in this release)
+### Fixed in 1.0.0 (audit follow-up)
 
-- L1: zod advisory GHSA-mrhx-c7xc-m3w5 remains until the zod 4
-  migration; low exploitability over stdio.
-- L2: the plain `key` field (event-type key in log settings) can be
-  over-masked.
-- L3: `OMADA_TOOL_CATEGORIES` replaces the profile defaults, and
-  `getServerCapabilities` still reports the profile name.
-- L4: per-tool `destructiveHint` values are overridden by the catalog
-  (every write is reported destructive to clients).
-- L5: tool arguments and URLs at info level can contain client
-  identifiers; keep log retention short.
-- L6: some writes (`createSsid`, `adoptDevice`, `startFirmwareUpgrade`,
-  `startCableTest`) rely on the controller to reject unknown targets.
-- I1: dry runs send read requests (preflight and "before" reads), so
-  they need a working controller; they send no mutating request.
+| Finding | Problem | Fix |
+| --- | --- | --- |
+| L1 | zod 3 advisory GHSA-mrhx-c7xc-m3w5 (memory exhaustion on oversized collections) | Migrated to zod 4.6.7 (the MCP SDK accepts `^3.25 \|\| ^4.0`); `npm audit --omit=dev` reports 0 vulnerabilities and CI/publish fail on high or critical production advisories |
+| L2 | The event-type `key` in log notification settings was shown as `********` | Redaction is scoped by parent: `key` stays readable inside notification collections and event/alert log entries and stays masked elsewhere |
+| L3 | `OMADA_TOOL_CATEGORIES` silently overrode `OMADA_CAPABILITY_PROFILE` | The effective profile is reported as `custom` (startup log, `getServerCapabilities`) and a startup warning is logged when both are set |
+| L4 | Per-tool tests asserted raw annotations that the catalog overrides | Per-tool tests assert the catalog-forced `destructiveHint: true` / `readOnlyHint: false`; a table-driven test checks it for every write tool |
+| L5 | Info logs carried full tool arguments and request URLs with client MACs | Info logs carry tool name, argument names and identifier fields only, and URLs with MAC/IP replaced; full arguments are debug-only; log retention is documented in [security-model.md](security-model.md#log-retention) |
+| L6 | `createSsid`, `adoptDevice`, `startFirmwareUpgrade`, `startCableTest` relied on the controller to reject unknown targets | Read-only preflights: WLAN group exists, device is in the pending list, device exists in the site; clear errors before any mutating request |
+| L7 | No end-to-end check of dry-run versus apply requests | Loopback stub-controller test over all 89 write tools: dry run sends no mutating request; apply sends exactly the documented method and path from `docs/openapi` |
+| M3 (rest) | Webhook hosts were checked literally only | Host names are resolved and refused if any address is private, loopback or link-local; optional `OMADA_WEBHOOK_ALLOWED_HOSTS` allowlist |
+| M4 (rest) | Deeper nested objects (`dhcpSettingsVO`, `wanPortIpv4Setting`, `customSetting`, ...) were free-form | Nested key allowlists generated from the OpenAPI schemas; update previews show a field-level before/planned `diff` |
+| New | `setDeviceLed` posted to `/devices/{mac}/led-setting`, a route that is not in the Open API spec (found by the L7 test) | Uses the documented `general-config` route of the device's type (AP, switch or gateway) after a device-list preflight |
+
+### Known limitations
+
+- Dry runs send read requests (preflight and "before" reads), so they
+  need a working controller; they send no mutating request.
+- Webhook destination checks resolve DNS at preview/apply time. The
+  controller resolves the name again when it delivers, so DNS rebinding
+  is narrowed, not eliminated; use `OMADA_WEBHOOK_ALLOWED_HOSTS`.
+- Map-typed nested objects (for example `lanNetworkVlanIds`) have no
+  fixed key set and stay bounded only by the 64 KB / depth-8 caps.
+- Some older read tools still accept non-site IDs with
+  `z.string().min(1)`; every path segment is encoded and dot segments
+  are refused, so this is optional hardening.
+- The development-only MCP Inspector tree still pulls zod 3 (five high
+  advisories in a full `npm audit`); it is not part of production
+  installs or the image. Container scanning and an SBOM are not yet in CI.
 - No ported tool has been validated against a live controller yet.
   Treat their results as `submitted` until the release validation matrix
   covers them, and always read back (see the omada-safe-change skill).
