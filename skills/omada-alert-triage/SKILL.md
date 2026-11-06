@@ -42,6 +42,7 @@ them. In compact catalog mode use `callOperation`.
 | Tool | Used for |
 | --- | --- |
 | `listSites`, `getSiteDetail` | Confirm the site and its time zone. |
+| `groupSiteAlerts` | One call: the window's alerts grouped by alert type with counts, first/last seen, parsed subjects (rogue DHCP IP/MAC, IP-conflict clients, WAN port) matched to current clients/devices, and a `truncated` flag. |
 | `listSiteAlerts` | The alert log for the window (`startTime`/`endTime` in Unix **milliseconds**, both or neither; `searchKey`; `page`/`pageSize`). |
 | `listSiteEvents` | Events around the alert spike (same window rules). |
 | `diagnoseLogs` | Quick first-page view of events, alerts and audit logs, with "unavailable vs empty" made explicit. |
@@ -60,7 +61,9 @@ them. In compact catalog mode use `callOperation`.
    mistakes.
 2. **Is it live?** `getNetworkHealthSummary` tells you whether the site
    is degraded now or the alerts are history.
-3. **Pull the log.** `listSiteAlerts` with both time bounds and
+3. **Pull the log.** Start with `groupSiteAlerts` (`windowHours`); it
+   pages and groups for you and says when it was truncated. For raw
+   messages or paging beyond its cap use `listSiteAlerts` with both time bounds and
    `pageSize` 100, paging until the window is covered or you reach
    500 alerts. If you stop early, say so: the tail may hold a different
    issue. If the result is empty, run `diagnoseLogs` to tell "no alerts"

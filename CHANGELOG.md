@@ -16,6 +16,17 @@
   plus the stable-channel firmware pool) with status `up-to-date`, `update-available` or `unknown`.
   Versions are compared by number, build date and release; anything not comparable stays `unknown`.
   Pool or per-device failures degrade to notes and warnings. It never triggers an upgrade.
+- `groupSiteAlerts` (read, `dashboard`): reads a site's alerts for a window (default 24 h,
+  paginated, capped at 2,000 with a `truncated` flag) and groups them by alert type with count,
+  first/last seen, severity and de-duplicated subjects parsed from the message (rogue DHCP server
+  IP/MAC with sign-extended MACs such as `FFFFFFF4:28:...` normalised, IP-conflict clients, WAN
+  port). Subjects are matched to the current client/device list by exact MAC (or IP when no MAC);
+  unmatched subjects stay unknown.
+- `getNetworkAuditReport` (read, `dashboard`): one-call prioritised audit composed from devices,
+  gateway WAN status, clients, grouped alerts, rogue APs, IPS, pending devices and per-AP Wi-Fi
+  retry/drop/channel data. Returns severity-ordered findings with evidence and recommendations,
+  compact sections, a simple penalty score and an `unavailable` list; every sub-read degrades on
+  its own. Thresholds are named constants. No writes or scans.
 
 ### Fixed
 

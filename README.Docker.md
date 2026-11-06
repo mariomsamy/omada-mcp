@@ -483,6 +483,8 @@ Single-call tools that internally aggregate multiple Omada API calls in parallel
 | `getGatewayHealth` | Composite: auto-discovers the gateway then fetches its detail (CPU, memory, firmware), WAN port statuses, LAN interface statuses, and port list in one call. Use for internet/WAN diagnostics. |
 | `diagnoseClient` | Composite: given a client MAC, IP, or hostname — fetches current connection status, detailed client info (VLAN, signal, policy), and recent connection history in one call. |
 | `getSecurityOverview` | Composite: combines active threat list (up to 20, newest first) and firewall settings into one response. Use for security posture checks or investigating alerts. |
+| `getNetworkAuditReport` | Composite, read-only: prioritised audit (severity-ordered findings with evidence and recommendations, compact sections, `unavailable` list) from devices, WAN status, clients, grouped alerts, rogue APs, IPS, pending devices and per-AP Wi-Fi retry/drop/channel data. No writes or scans. |
+| `groupSiteAlerts` | Composite, read-only: site alerts for a window (default 24 h, paginated with a cap and `truncated` flag) grouped by alert key with counts, first/last seen and parsed subjects (rogue DHCP IP/MAC, IP-conflict clients, WAN port), matched to current clients/devices by exact MAC/IP. |
 
 ### Dashboard / Monitor
 
