@@ -29,7 +29,7 @@ import { ActionOperations, type DeviceLedType } from './actions.js';
 import { AuthManager } from './auth.js';
 import { ClientOperations } from './client.js';
 import { ControllerOperations } from './controller.js';
-import { DeviceOperations } from './device.js';
+import { DeviceOperations, type FirmwareChannel } from './device.js';
 import { InsightOperations, type SiteThreatListOptions } from './insight.js';
 import { LogOperations, type LogQueryOptions, type LogSelectionBody } from './log.js';
 import type { FileServerConfig, SiteFileRestoreInfo, SiteRestoreInfo } from './maintenance.js';
@@ -42,7 +42,7 @@ import { SecurityOperations } from './security.js';
 import { SiteOperations } from './site.js';
 import { type SwitchPortChange, SwitchPortOperations } from './switchPorts.js';
 
-export type { LogQueryOptions, SiteThreatListOptions };
+export type { FirmwareChannel, LogQueryOptions, SiteThreatListOptions };
 
 export type OmadaClientOptions = OmadaConnectionConfig;
 
@@ -708,8 +708,13 @@ export class OmadaClient {
         return await this.deviceOps.listUpgradeFirmwares(page, pageSize, customHeaders);
     }
 
-    public async listUpgradeOverviewFirmwares(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
-        return await this.deviceOps.listUpgradeOverviewFirmwares(page, pageSize, customHeaders);
+    public async listUpgradeOverviewFirmwares(
+        page: number,
+        pageSize: number,
+        customHeaders?: CustomHeaders,
+        channel: FirmwareChannel = 0
+    ): Promise<unknown> {
+        return await this.deviceOps.listUpgradeOverviewFirmwares(page, pageSize, customHeaders, channel);
     }
 
     public async listSitesStacks(siteId?: string, page?: number, pageSize?: number, customHeaders?: CustomHeaders): Promise<unknown> {

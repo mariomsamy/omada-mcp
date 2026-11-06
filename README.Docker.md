@@ -288,6 +288,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | `listPendingDevices` | Lists devices pending adoption in a site. |
 | `getAllDeviceBySite` | Gets all devices in a site including offline and disconnected devices. |
 | `getFirmwareInfo` | Gets the latest available firmware info for a device. Use `listDevices` for MACs. |
+| `checkFirmwareUpdates` | Read-only firmware audit of every adopted device in a site: current vs latest known firmware (per-device latest info plus the stable firmware pool) with status `up-to-date`, `update-available` or `unknown`. Never upgrades; unknown is never guessed. |
 | `getGridAutoCheckUpgrade` | Gets the auto-check firmware upgrade plan list (paginated).                    |
 | `listSwitchNetworks` | Lists VLAN network assignments for a switch (paginated). Requires `switchMac`. |
 | `getSwitchGeneralConfig` | Gets general configuration for a switch. Requires `switchMac`.                 |
@@ -330,7 +331,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | `getUpgradeOverviewCritical` | Get the number of devices/models with critical firmware upgrades available. |
 | `getUpgradeOverviewTryBeta` | Get the current status of the try-beta firmware upgrade switch. |
 | `listUpgradeFirmwares` | List available firmware packages for upgrade (paginated). |
-| `listUpgradeOverviewFirmwares` | List firmware overview for upgradeable devices (paginated). |
+| `listUpgradeOverviewFirmwares` | List firmware overview for upgradeable devices (paginated; optional `channel`: 0 stable (default), 1 RC, 2 beta). |
 | `listSitesStacks` | List switch stacks in a site (paginated). |
 | `getSitesDeviceWhiteList` | Get the device adoption whitelist for a site (paginated). |
 | `getSitesGatewaysGeneralConfig` | Get general configuration for a gateway. Requires `gatewayMac`. |

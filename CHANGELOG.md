@@ -11,6 +11,11 @@
   `full` returns the previous payload.
 - Optional `start`/`end` (Unix seconds) on the time-range dashboard tools and `getTopThreats`;
   optional `type` on `listAllSsids`.
+- `checkFirmwareUpdates` (read-only, `devices-general`): for every adopted device in a site, reports
+  current firmware vs the latest firmware the controller knows (per-device `latest-firmware-info`
+  plus the stable-channel firmware pool) with status `up-to-date`, `update-available` or `unknown`.
+  Versions are compared by number, build date and release; anything not comparable stays `unknown`.
+  Pool or per-device failures degrade to notes and warnings. It never triggers an upgrade.
 
 ### Fixed
 
@@ -27,6 +32,8 @@
   - A one-sided or empty `start`/`end` window is rejected before any controller request.
 - Output redaction no longer masks the firewall `synCookies` toggle (it matched the `cookie`
   substring). Real secrets (`password`, `secret`, `token`, `key`, cookies) are still masked.
+- `listUpgradeOverviewFirmwares` omitted the spec-required `channel` query parameter and failed
+  with HTTP 400; it now sends `channel` (default 0, stable) and the tool accepts an optional `channel`.
 
 ## 1.0.0 - 2026-11-05
 

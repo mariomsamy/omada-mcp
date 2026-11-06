@@ -124,6 +124,7 @@ describe('tools/index', () => {
             expect(mockServer.registerTool).toHaveBeenCalledWith('getUpgradeOverviewTryBeta', expect.any(Object), expect.any(Function));
             expect(mockServer.registerTool).toHaveBeenCalledWith('listUpgradeFirmwares', expect.any(Object), expect.any(Function));
             expect(mockServer.registerTool).toHaveBeenCalledWith('listUpgradeOverviewFirmwares', expect.any(Object), expect.any(Function));
+            expect(mockServer.registerTool).toHaveBeenCalledWith('checkFirmwareUpdates', expect.any(Object), expect.any(Function));
             expect(mockServer.registerTool).toHaveBeenCalledWith('listSitesStacks', expect.any(Object), expect.any(Function));
             expect(mockServer.registerTool).toHaveBeenCalledWith('getSitesDeviceWhiteList', expect.any(Object), expect.any(Function));
             expect(mockServer.registerTool).toHaveBeenCalledWith('getSitesSwitchesEs', expect.any(Object), expect.any(Function));
