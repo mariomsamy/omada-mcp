@@ -23,7 +23,6 @@ You will need:
 | Variable | Value |
 | --- | --- |
 | `OMADA_BASE_URL` | Controller URL, for example `https://<controller-host>:8043` |
-| `OMADA_CLOUD_REGION` | Use the TP-Link cloud instead of a local controller, for example `euw1`. Replaces `OMADA_BASE_URL`; see [CLOUD.md](CLOUD.md) |
 | `OMADA_CLIENT_ID` | Client ID from the Open API app |
 | `OMADA_CLIENT_SECRET` | Client Secret from the Open API app |
 | `OMADA_OMADAC_ID` | The controller's Omada ID |
