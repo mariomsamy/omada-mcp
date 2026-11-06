@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { type CallToolResult, ListResourcesRequestSchema, type ServerNotification, type ServerRequest } from '@modelcontextprotocol/sdk/types.js';
@@ -6,6 +8,25 @@ import packageMetadata from '../../package.json' with { type: 'json' };
 
 import { logger } from '../utils/logger.js';
 import { isLikelySensitiveString, isSensitiveField, maskValue, redactSecrets, redactSecretsInText, scrubPersonalData } from '../utils/redact.js';
+
+/**
+ * Name of the controller profile the current tool call targets. Only set when OMADA_CONTROLLERS_FILE
+ * is configured, so single-controller logs, audit records and results are unchanged.
+ */
+const controllerContext = new AsyncLocalStorage<string>();
+
+export function runWithController<T>(controller: string, callback: () => T): T {
+    return controllerContext.run(controller, callback);
+}
+
+export function currentControllerName(): string | undefined {
+    return controllerContext.getStore();
+}
+
+function controllerField(): { controller?: string } {
+    const controller = controllerContext.getStore();
+    return controller === undefined ? {} : { controller };
+}
 
 // Custom headers schema for optional HTTP headers
 export const customHeadersSchema = z.record(z.string(), z.string()).optional();
@@ -161,17 +182,18 @@ export function wrapToolHandler<Args extends Record<string, unknown>>(
 ): (args: Args, extra: ToolExtra) => Promise<CallToolResult> {
     return async (args: Args, extra: ToolExtra): Promise<CallToolResult> => {
         const sessionId = extra.sessionId ?? 'unknown-session';
-        logger.info('Tool invoked', { tool: name, sessionId, ...summarizeArgsForInfo(args) });
+        logger.info('Tool invoked', { tool: name, sessionId, ...controllerField(), ...summarizeArgsForInfo(args) });
         logger.debug('Tool arguments', { tool: name, sessionId, args: safeSerialize(args) });
 
         try {
             const result = await handler(args, extra);
-            logger.info('Tool completed', { tool: name, sessionId });
+            logger.info('Tool completed', { tool: name, sessionId, ...controllerField() });
             return result;
         } catch (error) {
             logger.error('Tool failed', {
                 tool: name,
                 sessionId,
+                ...controllerField(),
                 error: redactSecretsInText(error instanceof Error ? error.message : String(error)),
             });
             throw error;
@@ -184,9 +206,13 @@ export function wrapToolHandler<Args extends Record<string, unknown>>(
  * status, summary) are logged verbatim so incident response can tell what changed and where;
  * only values under secret-looking keys are masked (no length-based string heuristic).
  */
-export function buildMutationAuditRecord(summary: MutationSummary, context: { tool?: string; sessionId?: string } = {}): Record<string, unknown> {
+export function buildMutationAuditRecord(
+    summary: MutationSummary,
+    context: { tool?: string; sessionId?: string; controller?: string } = {}
+): Record<string, unknown> {
     return {
         ...(context.tool ? { tool: context.tool } : {}),
+        ...(context.controller ? { controller: context.controller } : {}),
         action: summary.action,
         target: summary.target,
         ...(summary.siteId === undefined ? {} : { siteId: summary.siteId }),
@@ -210,12 +236,16 @@ export function toMutationResult(summary: MutationSummary, context: { tool?: str
               : summary.status === 'applied'
                 ? 'submitted'
                 : summary.status;
+    const controller = currentControllerName();
     const normalized = {
         ...summary,
+        ...(controller === undefined ? {} : { controller }),
         status: status as MutationSummary['status'],
         ...(summary.result === undefined ? {} : { result: redactSecrets(summary.result) }),
     };
-    logger.info('Mutation audit event', { mutation: JSON.stringify(buildMutationAuditRecord(normalized, context)) });
+    logger.info('Mutation audit event', {
+        mutation: JSON.stringify(buildMutationAuditRecord(normalized, controller === undefined ? context : { ...context, controller })),
+    });
     return toToolResult(normalized);
 }
 
@@ -233,6 +263,7 @@ export function wrapMutationToolHandler<Args extends Record<string, unknown>>(
         } catch (error) {
             logger.error('Mutation audit event', {
                 tool: name,
+                ...controllerField(),
                 mode,
                 status: 'failed',
                 sessionId: extra.sessionId,

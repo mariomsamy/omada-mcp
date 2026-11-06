@@ -3,12 +3,28 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ALL_CATEGORIES } from '../dist/config.js';
+import { ControllerRegistry } from '../dist/controllerRegistry.js';
 import { registerAllTools } from '../dist/tools/index.js';
 
 const root = resolve(import.meta.dirname, '..');
 const permissions = new Map(ALL_CATEGORIES.map((category) => [category, new Set(['read', 'write'])]));
 const names = new Set();
-for (const catalogMode of ['standard', 'compact']) {
+// Placeholder profiles (never contacted) so multi-controller-only tools such as listControllers are seen.
+const placeholder = (name) => ({
+    name,
+    isDefault: name === 'a',
+    baseUrl: 'https://omada.example.com',
+    clientId: 'x',
+    clientSecret: 'x',
+    omadacId: 'x',
+    strictSsl: true,
+});
+const controllerRegistry = new ControllerRegistry([placeholder('a'), placeholder('b')], 'a');
+for (const [catalogMode, extra] of [
+    ['standard', {}],
+    ['compact', {}],
+    ['standard', { controllerRegistry }],
+]) {
     const current = new Set();
     registerAllTools(
         {
@@ -20,7 +36,7 @@ for (const catalogMode of ['standard', 'compact']) {
         },
         {},
         permissions,
-        { includeDeprecated: true, catalogMode }
+        { includeDeprecated: true, catalogMode, ...extra }
     );
 }
 const declarations = new Map();

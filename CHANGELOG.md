@@ -8,6 +8,13 @@
   (`https://<region>-omada-northbound.tplinkcloud.com`) instead of a local controller. Setting
   it together with `OMADA_BASE_URL` is rejected, the region is validated as a region code, and
   strict TLS is mandatory in cloud mode. See `docs/CLOUD.md`.
+- Multi-controller mode: `OMADA_CONTROLLERS_FILE` points at a `chmod 600` JSON file of named
+  controller profiles, so one stdio server can reach several Omada controllers. With more than one
+  profile every tool gains a `controller` argument (read tools default to the default controller;
+  write tools, including previews, require it). Each controller has its own lazily created client
+  and token cache; audit events and tool logs record the controller name, never credentials. New
+  read-only `listControllers` tool. Without the file nothing changes: schemas, results and logs are
+  identical. See `docs/MULTI-CONTROLLER.md`.
 
 ## 1.0.0 - 2026-11-05
 

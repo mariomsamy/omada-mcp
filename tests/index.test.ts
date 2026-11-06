@@ -104,6 +104,41 @@ describe('src/index main entry', () => {
         expect(startStdioServer).not.toHaveBeenCalled();
     });
 
+    it('starts a routed stdio server with lazy clients when controller profiles are configured', async () => {
+        const secret = 'placeholder-secret-value-should-never-appear';
+        const controllerProfiles = ['home', 'lab'].map((name) => ({
+            name,
+            isDefault: name === 'home',
+            baseUrl: `https://${name}.example.com`,
+            clientId: `${name}-id`,
+            clientSecret: secret,
+            omadacId: `${name}-omadac`,
+            strictSsl: true,
+        }));
+        loadConfigFromEnv.mockReturnValue({ ...baseConfig, controllerProfiles, defaultController: 'home' });
+
+        await loadEntry();
+
+        expect(OmadaClient).not.toHaveBeenCalled();
+        const [client, categories, options] = startStdioServer.mock.calls[0];
+        expect(categories).toEqual(new Map());
+        expect(options.controllerRegistry.names).toEqual(['home', 'lab']);
+        expect(client.config).toEqual(expect.objectContaining({ baseUrl: 'https://home.example.com' }));
+        expect(OmadaClient).toHaveBeenCalledTimes(1);
+        expect(loggerInfo).toHaveBeenCalledWith(
+            'Loaded Omada controller profiles',
+            expect.objectContaining({
+                defaultController: 'home',
+                controllers: [
+                    { name: 'home', host: 'home.example.com', default: true },
+                    { name: 'lab', host: 'lab.example.com', default: false },
+                ],
+            })
+        );
+        expect(loggerInfo).not.toHaveBeenCalledWith('Loaded Omada configuration', expect.anything());
+        expect(JSON.stringify(loggerInfo.mock.calls)).not.toContain(secret);
+    });
+
     it('writes startup failures to stderr and sets exit code', async () => {
         loadConfigFromEnv.mockReturnValue({ ...baseConfig, useHttp: false });
         const failure = new Error('boom');

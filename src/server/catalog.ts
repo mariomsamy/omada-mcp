@@ -4,6 +4,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import packageMetadata from '../../package.json' with { type: 'json' };
 import type { ToolCategory, ToolPermission } from '../config.js';
+import type { ControllerRegistry } from '../controllerRegistry.js';
 import { redactSecrets, redactSecretsInText } from '../utils/redact.js';
 import { type ToolExtra, toToolResult, wrapToolHandler } from './common.js';
 
@@ -14,6 +15,11 @@ export interface CatalogOptions {
     capabilityProfile?: string;
     /** Optional webhook destination allowlist (OMADA_WEBHOOK_ALLOWED_HOSTS). */
     webhookAllowedHosts?: string[];
+    /**
+     * Controller profiles from OMADA_CONTROLLERS_FILE. When set, every tool is routed per call; the
+     * `controller` argument is added to schemas only when more than one controller is configured.
+     */
+    controllerRegistry?: ControllerRegistry;
 }
 
 export interface CatalogTool {

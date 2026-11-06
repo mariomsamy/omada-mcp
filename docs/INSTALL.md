@@ -36,6 +36,17 @@ You will need:
 
 The full list is in `.env.example`.
 
+### Several controllers
+
+To use more than one controller from the same server, put each
+controller's credentials in a `chmod 600` JSON file and set only
+`OMADA_CONTROLLERS_FILE=/absolute/path/controllers.json` (plus the
+capability variables). Tools then take a `controller` argument, and
+`listControllers` shows the configured names. The single-controller
+variables above are ignored when the file is set. See
+[MULTI-CONTROLLER.md](MULTI-CONTROLLER.md) for the file format and
+agent snippets.
+
 ### TLS: keep `OMADA_STRICT_SSL=true`
 
 Controllers often use self-signed certificates. Do not switch

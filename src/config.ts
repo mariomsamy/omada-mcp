@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { type ControllerProfile, loadControllerProfiles } from './controllerProfiles.js';
 import { isLoopbackBindAddress, isValidBindAddress, isValidOrigin } from './utils/config-validations.js';
 
 // ---------------------------------------------------------------------------
@@ -405,7 +406,28 @@ export interface EnvironmentConfig {
     httpNgrokAuthToken?: string;
     /** Required bearer token for the lab-only HTTP transport (compared in constant time). */
     httpBearerToken?: string;
+
+    /**
+     * Named controller profiles from OMADA_CONTROLLERS_FILE (undefined in single-controller mode).
+     * They hold credentials: never log them; use ControllerRegistry.describe() instead.
+     */
+    controllerProfiles?: ControllerProfile[];
+    /** Name of the default controller profile (set together with controllerProfiles). */
+    defaultController?: string;
 }
+
+/** Single-controller variables that OMADA_CONTROLLERS_FILE replaces (ignored with a warning when both are set). */
+const SINGLE_CONTROLLER_ENV_VARS = [
+    'OMADA_BASE_URL',
+    'OMADA_CLOUD_REGION',
+    'OMADA_CLIENT_ID',
+    'OMADA_CLIENT_SECRET',
+    'OMADA_OMADAC_ID',
+    'OMADA_SITE_ID',
+    'OMADA_STRICT_SSL',
+    'OMADA_CA_FILE',
+    'OMADA_TIMEOUT',
+] as const;
 
 /** Normalised OMADA_CLOUD_REGION (lower-case, trimmed) or undefined when unset/blank. */
 function normalizeCloudRegion(env: NodeJS.ProcessEnv): string | undefined {
@@ -432,6 +454,11 @@ function resolveBaseUrl(env: NodeJS.ProcessEnv): string | undefined {
 }
 
 export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): EnvironmentConfig {
+    const controllersFile = env.OMADA_CONTROLLERS_FILE?.trim() || undefined;
+    const controllers = controllersFile ? loadControllerProfiles(controllersFile) : undefined;
+    // In multi-controller mode the default profile fills the single-controller fields, so the rest of
+    // the schema (and the lab-only HTTP refusal below) keeps working unchanged.
+    const profile = controllers?.profiles.find((entry) => entry.name === controllers.defaultName);
     const parsed = envSchema.safeParse({
         capabilityProfile: env.OMADA_CAPABILITY_PROFILE,
         // Tool category filtering
@@ -442,16 +469,30 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Environ
         webhookAllowedHosts: env.OMADA_WEBHOOK_ALLOWED_HOSTS,
 
         // Omada Client Configuration
-        baseUrl: resolveBaseUrl(env),
-        cloudRegion: normalizeCloudRegion(env),
-        baseUrlAndRegionBothSet: Boolean(env.OMADA_BASE_URL?.trim() && normalizeCloudRegion(env)),
-        clientId: env.OMADA_CLIENT_ID,
-        clientSecret: env.OMADA_CLIENT_SECRET,
-        omadacId: env.OMADA_OMADAC_ID,
-        siteId: env.OMADA_SITE_ID,
-        strictSsl: env.OMADA_STRICT_SSL,
-        caFile: env.OMADA_CA_FILE,
-        requestTimeout: env.OMADA_TIMEOUT,
+        ...(profile
+            ? {
+                  baseUrl: profile.baseUrl,
+                  baseUrlAndRegionBothSet: false,
+                  clientId: profile.clientId,
+                  clientSecret: profile.clientSecret,
+                  omadacId: profile.omadacId,
+                  siteId: profile.siteId,
+                  strictSsl: profile.strictSsl ? 'true' : 'false',
+                  caFile: profile.caFile,
+                  requestTimeout: profile.requestTimeout === undefined ? undefined : String(profile.requestTimeout),
+              }
+            : {
+                  baseUrl: resolveBaseUrl(env),
+                  cloudRegion: normalizeCloudRegion(env),
+                  baseUrlAndRegionBothSet: Boolean(env.OMADA_BASE_URL?.trim() && normalizeCloudRegion(env)),
+                  clientId: env.OMADA_CLIENT_ID,
+                  clientSecret: env.OMADA_CLIENT_SECRET,
+                  omadacId: env.OMADA_OMADAC_ID,
+                  siteId: env.OMADA_SITE_ID,
+                  strictSsl: env.OMADA_STRICT_SSL,
+                  caFile: env.OMADA_CA_FILE,
+                  requestTimeout: env.OMADA_TIMEOUT,
+              }),
 
         // MCP Generic Server Configuration
         logLevel: env.MCP_SERVER_LOG_LEVEL,
@@ -485,6 +526,19 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Environ
     let httpAllowedOrigins = parsed.data.httpAllowedOrigins ?? ['127.0.0.1', 'localhost'];
 
     const warnings: string[] = [];
+
+    if (controllers) {
+        if (parsed.data.useHttp) {
+            throw new Error(
+                'Invalid environment configuration:\nOMADA_CONTROLLERS_FILE is supported with the stdio transport only; unset it or MCP_SERVER_USE_HTTP.'
+            );
+        }
+        const ignored = SINGLE_CONTROLLER_ENV_VARS.filter((name) => env[name]?.trim());
+        if (ignored.length > 0) {
+            warnings.push(`OMADA_CONTROLLERS_FILE is set, so ${ignored.join(', ')} ${ignored.length === 1 ? 'is' : 'are'} ignored.`);
+        }
+        warnings.push(...controllers.warnings);
+    }
 
     // If wildcard is present, use empty array to disable SDK origin validation
     // (we'll handle it in our error handler with better logging)
@@ -554,5 +608,6 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Environ
         httpNgrokEnabled: parsed.data.httpNgrokEnabled,
         httpNgrokAuthToken: parsed.data.httpNgrokAuthToken,
         httpBearerToken: parsed.data.httpBearerToken,
+        ...(controllers ? { controllerProfiles: controllers.profiles, defaultController: controllers.defaultName } : {}),
     };
 }

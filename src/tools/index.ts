@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolCategory, ToolPermission } from '../config.js';
 import type { OmadaClient } from '../omadaClient/index.js';
 import { type CatalogOptions, type CatalogTool, registerCatalog } from '../server/catalog.js';
+import { routeToolAcrossControllers } from '../server/controllerRouting.js';
 import { logger } from '../utils/logger.js';
 import { registerAdoptDeviceTool } from './adoptDevice.js';
 import { registerApplyRfPlanningHistoryTool } from './applyRfPlanningHistory.js';
@@ -339,6 +340,7 @@ import { registerListClientsActivityTool } from './listClientsActivity.js';
 import { registerListClientsPastConnectionsTool } from './listClientsPastConnections.js';
 import { registerListClientToSiteVpnClientsTool } from './listClientToSiteVpnClients.js';
 import { registerListClientToSiteVpnServersTool } from './listClientToSiteVpnServers.js';
+import { registerListControllersTool } from './listControllers.js';
 import { registerListDevicesTool } from './listDevices.js';
 import { registerListDevicesStatsTool } from './listDevicesStats.js';
 import { registerListEapAclsTool } from './listEapAcls.js';
@@ -955,6 +957,10 @@ export function registerAllTools(
         if (activeCategories && !activeCategories.get(entry.category)?.has(entry.permission)) continue;
         if (registered.has(entry.fn)) continue;
         registered.add(entry.fn);
+        if (options.controllerRegistry) {
+            catalog.push(...routeToolAcrossControllers(entry.fn, entry.category, entry.permission, options.controllerRegistry));
+            continue;
+        }
         const collector = {
             registerTool(
                 name: string,
@@ -967,5 +973,6 @@ export function registerAllTools(
         entry.fn(collector, client);
     }
     registerCatalog(server, catalog, options);
+    if (options.controllerRegistry) registerListControllersTool(server, options.controllerRegistry);
     logger.info('Tool categories loaded', { registeredOperations: catalog.length, catalogMode: options.catalogMode ?? 'standard' });
 }

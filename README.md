@@ -232,6 +232,7 @@ The server reads configuration from environment variables. See `.env.example` fo
 | `OMADA_STRICT_SSL` | No | `true` | Enforce TLS certificate validation |
 | `OMADA_CA_FILE` | No | - | PEM private CA bundle path; retains hostname verification. Mount the file read-only in Docker. |
 | `OMADA_TIMEOUT` | No | `30000` | HTTP timeout in milliseconds |
+| `OMADA_CONTROLLERS_FILE` | No | - | Path to a `chmod 600` JSON file of named controller profiles (several controllers in one server, chosen per call with a `controller` argument). When set, the single-controller variables above are ignored with a warning. stdio only. See [docs/MULTI-CONTROLLER.md](docs/MULTI-CONTROLLER.md). |
 
 ### Capability and Logging
 
@@ -339,6 +340,7 @@ npm run inspector:build
 | `searchOperations` | Searches only enabled operations by name, description or category. |
 | `describeOperation` | Returns an enabled operation's exact argument schema and permission. |
 | `getServerCapabilities` | Reports version, effective catalog, profile and validation limits. |
+| `listControllers` | Only with `OMADA_CONTROLLERS_FILE`: lists configured controller names, host, default flag and default site; never credentials. See [docs/MULTI-CONTROLLER.md](docs/MULTI-CONTROLLER.md). |
 | `callOperation` | Compact mode only: invokes an enabled operation through its existing schema and handler. |
 
 

@@ -163,6 +163,7 @@ All env vars are loaded in `src/config.ts` via Zod. Never call `process.env` dir
 | `OMADA_SITE_ID` | — | Default site ID |
 | `OMADA_STRICT_SSL` | `true` | Enforce SSL certificate validation |
 | `OMADA_TIMEOUT` | `30000` | Request timeout (ms) |
+| `OMADA_CONTROLLERS_FILE` | — | Named controller profiles (JSON, chmod 600); replaces the single-controller variables. Loaded by `src/controllerProfiles.ts`, held by `src/controllerRegistry.ts`, routed per call by `src/server/controllerRouting.ts`. See [docs/MULTI-CONTROLLER.md](docs/MULTI-CONTROLLER.md) |
 | `OMADA_CAPABILITY_PROFILE` | `safe-read` | `safe-read` / `ops-write` / `admin` / `compatibility` |
 | `OMADA_TOOL_CATEGORIES` | (from profile) | Explicit category override, e.g. `clients:rw,devices-all:r` |
 

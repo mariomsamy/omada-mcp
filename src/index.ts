@@ -2,6 +2,7 @@ import './env.js';
 import pkg from '../package.json' with { type: 'json' };
 import type { OmadaConnectionConfig } from './config.js';
 import { loadConfigFromEnv } from './config.js';
+import { ControllerRegistry } from './controllerRegistry.js';
 import { OmadaClient } from './omadaClient/index.js';
 import { startHttpServer } from './server/http.js';
 import { startStdioServer } from './server/stdio.js';
@@ -30,6 +31,20 @@ async function main(): Promise<void> {
 
     for (const warning of config.startupWarnings) {
         logger.warn(warning);
+    }
+
+    if (config.controllerProfiles && config.defaultController) {
+        // Multi-controller mode (stdio only; loadConfigFromEnv refuses it with HTTP). Credentials stay
+        // inside the registry; only names, hosts and default flags are logged.
+        const registry = new ControllerRegistry(config.controllerProfiles, config.defaultController);
+        logger.info('Loaded Omada controller profiles', {
+            controllers: registry.describe(),
+            defaultController: registry.defaultName,
+            capabilityProfile: config.capabilityProfile,
+            requestedCapabilityProfile: config.requestedCapabilityProfile,
+        });
+        await startStdioServer(registry.lazyClient(registry.defaultName), config.toolCategories, { ...config, controllerRegistry: registry });
+        return;
     }
 
     logger.info('Loaded Omada configuration', {
