@@ -2,17 +2,25 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { OmadaClient } from '../omadaClient/index.js';
 import { siteInputSchema, toToolResult, wrapToolHandler } from '../server/common.js';
-import { diagnosticCompleteness, pageObservation, readDiagnosticSection } from '../utils/diagnostics.js';
+import { compactLogSections, diagnosticCompleteness, pageObservation, readDiagnosticSection } from '../utils/diagnostics.js';
 
 export function registerDiagnoseLogsTool(server: McpServer, client: OmadaClient): void {
     server.registerTool(
         'diagnoseLogs',
         {
             description:
-                'Compare first-page events, alerts, audit logs and logging configuration for one site and time window. Empty results and access failures are distinct; logging settings are never changed.',
-            inputSchema: siteInputSchema.extend({ windowHours: z.number().int().min(1).max(168).default(24) }).shape,
+                'Compare first-page events, alerts, audit logs and logging configuration for one site and time window. Empty results and access failures are distinct; logging settings are never changed. detail="summary" (default) reports notification settings as enabled counts; detail="full" returns every notification type.',
+            inputSchema: siteInputSchema.extend({
+                windowHours: z.number().int().min(1).max(168).default(24),
+                detail: z
+                    .enum(['summary', 'full'])
+                    .default('summary')
+                    .describe(
+                        'summary (default): notification settings as enabled counts. full: every notification type as returned by the controller.'
+                    ),
+            }).shape,
         },
-        wrapToolHandler('diagnoseLogs', async ({ siteId, customHeaders, windowHours }) => {
+        wrapToolHandler('diagnoseLogs', async ({ siteId, customHeaders, windowHours, detail }) => {
             const resolvedSiteId = await client.resolveSiteId(siteId);
             const endTime = Date.now();
             const startTime = endTime - windowHours * 3600000;
@@ -31,7 +39,8 @@ export function registerDiagnoseLogsTool(server: McpServer, client: OmadaClient)
                 ...diagnosticCompleteness(sections),
                 inventoryComplete: false,
                 pageLimit: 20,
-                sections,
+                detail,
+                sections: detail === 'full' ? sections : compactLogSections(sections),
                 observations: { events: pageObservation(events), alerts: pageObservation(alerts), audit: pageObservation(audit) },
                 limitation:
                     'Logging settings are current snapshots, not historical settings for this window. Configuration and permissions must be interpreted alongside each result. No returned events is not proof of a quiet or healthy network.',

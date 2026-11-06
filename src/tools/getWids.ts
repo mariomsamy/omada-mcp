@@ -7,7 +7,8 @@ export function registerGetWidsTool(server: McpServer, client: OmadaClient): voi
     server.registerTool(
         'getWids',
         {
-            description: 'Get Wireless Intrusion Detection System (WIDS) information for a site, including detected attacks and rogue devices.',
+            description:
+                'Get the Wireless Intrusion Detection System (WIDS) entry list for a site (all pages), including detected attacks and rogue devices.',
             inputSchema: siteInputSchema.shape,
         },
         wrapToolHandler('getWids', async ({ siteId, customHeaders }) => toToolResult(await client.getWids(siteId, customHeaders)))

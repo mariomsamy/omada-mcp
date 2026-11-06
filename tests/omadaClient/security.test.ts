@@ -153,10 +153,28 @@ describe('omadaClient/security', () => {
             const mockResponse: OmadaApiResponse<unknown[]> = { errorCode: 0, result: mockThreats };
             (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
 
+            const now = vi.spyOn(Date, 'now').mockReturnValue(1792845296789);
             const result = await securityOps.getTopThreats();
+            now.mockRestore();
 
-            expect(mockRequest.get).toHaveBeenCalledWith('/api/security/threat-management/top', undefined, undefined);
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/api/security/threat-management/top',
+                { startTime: 1792758896, endTime: 1792845296 },
+                undefined
+            );
             expect(result).toEqual(mockThreats);
+        });
+
+        it('sends an explicit startTime/endTime window in Unix seconds', async () => {
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue({ errorCode: 0, result: [] });
+
+            await securityOps.getTopThreats({ 'X-Request-Id': 'top' }, { start: 1700000000, end: 1700086400 });
+
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/api/security/threat-management/top',
+                { startTime: 1700000000, endTime: 1700086400 },
+                { 'X-Request-Id': 'top' }
+            );
         });
 
         it('should return empty array when result is null', async () => {

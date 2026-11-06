@@ -80,3 +80,126 @@ export function wifiFindings(sections: Record<string, DiagnosticSection>): WifiF
     }
     return findings.slice(0, 10);
 }
+
+/** `summary` (default) drops raw time series and empty rows from composite diagnostics; `full` keeps the controller payload. */
+export type DiagnosticDetail = 'summary' | 'full';
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function withData(section: DiagnosticSection, compact: (data: Record<string, unknown>) => unknown): DiagnosticSection {
+    const data = asRecord(section.data);
+    if (section.status !== 'ok' || !data) return section;
+    return { ...section, data: compact(data) };
+}
+
+export interface SeriesStats {
+    samples: number;
+    mean?: number;
+    max?: number;
+    latest?: number;
+}
+
+/** Mean, max and latest of one numeric field across a controller time series (two decimals). */
+export function seriesStats(series: unknown, field: string): SeriesStats {
+    const values = Array.isArray(series)
+        ? series.map((point) => asRecord(point)?.[field]).filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+        : [];
+    if (values.length === 0) return { samples: 0 };
+    const round = (value: number) => Math.round(value * 100) / 100;
+    return {
+        samples: values.length,
+        mean: round(values.reduce((total, value) => total + value, 0) / values.length),
+        max: round(Math.max(...values)),
+        latest: round(values.at(-1) ?? 0),
+    };
+}
+
+/** Per-AP retry/drop averages without the five-minute time series (07-monitor.json retry-dropped-rate). */
+function compactRetries(data: Record<string, unknown>): Record<string, unknown> {
+    const summarize = (entries: unknown, seriesField: string, rateField: string) =>
+        Array.isArray(entries)
+            ? entries.map((entry) => {
+                  const { [seriesField]: series, ...rest } = asRecord(entry) ?? {};
+                  return { ...rest, [`${rateField}Stats`]: seriesStats(series, rateField) };
+              })
+            : entries;
+    return {
+        ...data,
+        retryEaps: summarize(data.retryEaps, 'retries', 'retryRate'),
+        droppedEaps: summarize(data.droppedEaps, 'dropouts', 'dropRate'),
+    };
+}
+
+function isOccupiedChannel(entry: Record<string, unknown> | undefined): entry is Record<string, unknown> {
+    return entry !== undefined && [entry.apNum, entry.wrNum, entry.clientNum].some((count) => typeof count === 'number' && count > 0);
+}
+
+/** Occupied channels only (an AP, wireless router or client present), with compact per-AP rows. */
+function compactChannels(data: Record<string, unknown>): Record<string, unknown> {
+    const compacted: Record<string, unknown> = {};
+    for (const [band, entries] of Object.entries(data)) {
+        if (!Array.isArray(entries)) {
+            compacted[band] = entries;
+            continue;
+        }
+        compacted[band] = entries
+            .map(asRecord)
+            .filter(isOccupiedChannel)
+            .map(({ apWithClientInfoList, ...channel }) =>
+                Array.isArray(apWithClientInfoList)
+                    ? {
+                          ...channel,
+                          aps: apWithClientInfoList.map((ap) => {
+                              const record = asRecord(ap) ?? {};
+                              return {
+                                  name: record.name,
+                                  mac: record.mac,
+                                  clientNum: record.clientNum,
+                                  channelUtilization: record.channelUtilization,
+                              };
+                          }),
+                      }
+                    : channel
+            );
+    }
+    return compacted;
+}
+
+/** Compact Wi-Fi sections for `detail: 'summary'`. Compute findings from the full sections first. */
+export function compactWifiSections(sections: Record<string, DiagnosticSection>): Record<string, DiagnosticSection> {
+    return Object.fromEntries(
+        Object.entries(sections).map(([name, section]) => {
+            if (name === 'retries') return [name, withData(section, compactRetries)];
+            if (name === 'channels') return [name, withData(section, compactChannels)];
+            return [name, section];
+        })
+    );
+}
+
+/** Replace per-type notification arrays with enabled counts (10-log.json LogNotification*VO). */
+function compactLogSettings(data: Record<string, unknown>): Record<string, unknown> {
+    const compacted: Record<string, unknown> = {};
+    for (const [field, value] of Object.entries(data)) {
+        if (!Array.isArray(value) || !field.toLowerCase().endsWith('notifications')) {
+            compacted[field] = value;
+            continue;
+        }
+        const counts: Record<string, number> = { total: value.length };
+        for (const entry of value) {
+            for (const [flag, enabled] of Object.entries(asRecord(entry) ?? {})) {
+                if (typeof enabled === 'boolean') counts[`${flag}Enabled`] = (counts[`${flag}Enabled`] ?? 0) + (enabled ? 1 : 0);
+            }
+        }
+        compacted[field] = counts;
+    }
+    return compacted;
+}
+
+/** Compact logging-setting sections for `detail: 'summary'`; event, alert and audit pages are unchanged. */
+export function compactLogSections(sections: Record<string, DiagnosticSection>): Record<string, DiagnosticSection> {
+    return Object.fromEntries(
+        Object.entries(sections).map(([name, section]) => [name, name.endsWith('Settings') ? withData(section, compactLogSettings) : section])
+    );
+}

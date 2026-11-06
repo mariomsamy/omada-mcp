@@ -150,6 +150,22 @@ describe('extended secret key coverage', () => {
         }
     );
 
+    it('keeps the firewall synCookies toggle readable in results, logs and free text (regression)', () => {
+        const firewall = { synCookies: true, synCookie: 'enable', icmpFlood: false };
+        expect(isSensitiveKey('synCookies')).toBe(false);
+        expect(isSensitiveKey('SYNCOOKIES')).toBe(false);
+        expect(redactSecrets({ firewall })).toEqual({ firewall });
+        expect(redactSecretsInText('synCookies=true')).toBe('synCookies=true');
+    });
+
+    it.each(['cookie', 'sessionCookie', 'synCookiesSecret', 'password', 'clientSecret', 'accessToken', 'apiKey', 'wpaKey'])(
+        'still masks real secret field %s next to the synCookies allow-list',
+        (key) => {
+            expect(isSensitiveKey(key)).toBe(true);
+            expect(redactSecrets({ [key]: 'abc', synCookies: true })).toEqual({ [key]: '********', synCookies: true });
+        }
+    );
+
     it('masks secret-keyed pairs inside free text without hiding the rest', () => {
         expect(redactSecretsInText('Invalid radiusPwd=hunter2 for site 5f9b')).toBe('Invalid radiusPwd="********" for site 5f9b');
         expect(redactSecretsInText('{"md5Key":"k1","name":"ospf"}')).toBe('{"md5Key":"********","name":"ospf"}');

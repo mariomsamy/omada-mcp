@@ -1,5 +1,6 @@
 import type { CustomHeaders, OmadaApiResponse } from '../types/index.js';
 
+import { ONE_HOUR_SECONDS, resolveTimeWindow, type TimeWindow } from '../utils/timeWindow.js';
 import type { RequestHandler } from './request.js';
 import type { SiteOperations } from './site.js';
 
@@ -14,17 +15,21 @@ export class MonitorOperations {
         private readonly buildPath: (path: string) => string
     ) {}
 
+    /** The spec marks start/end (Unix seconds) as required; default to the last hour when the caller gives none. */
+    private windowParams(window?: TimeWindow): { start: number; end: number } {
+        const { start, end } = window ?? resolveTimeWindow(undefined, undefined, ONE_HOUR_SECONDS);
+        return { start, end };
+    }
+
     /**
      * Get WiFi summary for a site dashboard.
      * OperationId: getWifiSummary
      * The required window uses Unix seconds; existing callers default to the last hour.
      */
-    public async getDashboardWifiSummary(siteId?: string, customHeaders?: CustomHeaders, window?: { start: number; end: number }): Promise<unknown> {
+    public async getDashboardWifiSummary(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/dashboard/wifi-summary`);
-        const end = window?.end ?? Math.floor(Date.now() / 1000);
-        const start = window?.start ?? end - 3600;
-        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { start, end }, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, this.windowParams(window), customHeaders);
         return this.request.ensureSuccess(response);
     }
 
@@ -32,10 +37,10 @@ export class MonitorOperations {
      * Get switch summary for a site dashboard.
      * OperationId: getSwitchSummary
      */
-    public async getDashboardSwitchSummary(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+    public async getDashboardSwitchSummary(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/dashboard/switch-summary`);
-        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, this.windowParams(window), customHeaders);
         return this.request.ensureSuccess(response);
     }
 
@@ -65,10 +70,10 @@ export class MonitorOperations {
      * Get traffic activity time-series data for a site dashboard.
      * OperationId: getTrafficActivities
      */
-    public async getDashboardTrafficActivities(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+    public async getDashboardTrafficActivities(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/dashboard/traffic-activities`);
-        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, this.windowParams(window), customHeaders);
         return this.request.ensureSuccess(response);
     }
 
@@ -85,45 +90,45 @@ export class MonitorOperations {
 
     /**
      * Get top devices by CPU usage for a site dashboard.
-     * OperationId: getTopDeviceCpuUsage
+     * OperationId: getTopCpuUsageWithTimeRange
      */
-    public async getDashboardTopCpuUsage(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+    public async getDashboardTopCpuUsage(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown[]> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/dashboard/top-device-cpu-usage`);
-        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, this.windowParams(window), customHeaders);
         return this.request.ensureSuccess(response) ?? [];
     }
 
     /**
      * Get top devices by memory usage for a site dashboard.
-     * OperationId: getTopDeviceMemoryUsage
+     * OperationId: getTopMemoryUsageWithTimeRange
      */
-    public async getDashboardTopMemoryUsage(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+    public async getDashboardTopMemoryUsage(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown[]> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/dashboard/top-device-memory-usage`);
-        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, this.windowParams(window), customHeaders);
         return this.request.ensureSuccess(response) ?? [];
     }
 
     /**
      * Get most active switches for a site dashboard.
-     * OperationId: getMostActiveSwitches
+     * OperationId: getActiveSwitches
      */
-    public async getDashboardMostActiveSwitches(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+    public async getDashboardMostActiveSwitches(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown[]> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/dashboard/most-active-switches`);
-        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, this.windowParams(window), customHeaders);
         return this.request.ensureSuccess(response) ?? [];
     }
 
     /**
      * Get most active EAPs (access points) for a site dashboard.
-     * OperationId: getMostActiveEaps
+     * OperationId: getActiveAps
      */
-    public async getDashboardMostActiveEaps(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+    public async getDashboardMostActiveEaps(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown[]> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/dashboard/most-active-eaps`);
-        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, this.windowParams(window), customHeaders);
         return this.request.ensureSuccess(response) ?? [];
     }
 

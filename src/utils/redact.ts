@@ -43,10 +43,18 @@ const BENIGN_KEY_FRAGMENTS =
     /(ping|passive|bypass|passthrough|passpoint|compass|keyword|keyid|keyname|keytype|keyindex|publickey|searchkey|sortkey|monkey|hotkey|keepalive)/g;
 
 /**
+ * Exact (lower-case) field names that contain a sensitive substring but are documented,
+ * non-secret settings. `synCookies` is the firewall SYN-cookie flood-protection toggle
+ * (docs/openapi firewall setting); it contains "cookie" but carries no credential.
+ */
+const NON_SECRET_KEYS = new Set(['syncookies', 'syncookie']);
+
+/**
  * Check if a key name indicates sensitive data.
  */
 export function isSensitiveKey(key: string): boolean {
     const normalized = key.toLowerCase();
+    if (NON_SECRET_KEYS.has(normalized)) return false;
     if (SENSITIVE_KEY_SUBSTRINGS.some((substring) => normalized.includes(substring))) return true;
     return SENSITIVE_KEY_PATTERN.test(normalized.replace(BENIGN_KEY_FRAGMENTS, ''));
 }
