@@ -1043,7 +1043,13 @@ describe('omadaClient/device', () => {
             const resp = mockSimpleResponse({ data: [] });
             (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(resp);
             await deviceOps.listUpgradeOverviewFirmwares(1, 10);
-            expect(mockRequest.get).toHaveBeenCalledWith('/api/upgrade/overview/firmwares', { page: 1, pageSize: 10 }, undefined);
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/upgrade/overview/firmwares', { channel: 0, page: 1, pageSize: 10 }, undefined);
+        });
+
+        it('passes the requested firmware channel', async () => {
+            (mockRequest.get as ReturnType<typeof vi.fn>).mockResolvedValue(mockSimpleResponse({ data: [] }));
+            await deviceOps.listUpgradeOverviewFirmwares(1, 10, undefined, 2);
+            expect(mockRequest.get).toHaveBeenCalledWith('/api/upgrade/overview/firmwares', { channel: 2, page: 1, pageSize: 10 }, undefined);
         });
     });
 

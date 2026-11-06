@@ -11,6 +11,7 @@ import { registerBackupSitesTool } from './backupSites.js';
 import { registerBackupSitesToFileServerTool } from './backupSitesToFileServer.js';
 import { registerBlockClientTool } from './blockClient.js';
 import { registerCancelRfOptimizationTool } from './cancelRfOptimization.js';
+import { registerCheckFirmwareUpdatesTool } from './checkFirmwareUpdates.js';
 import { registerCreateDhcpReservationTool } from './createDhcpReservation.js';
 import { registerCreateEapAclTool } from './createEapAcl.js';
 import { registerCreateGatewayAclTool } from './createGatewayAcl.js';
@@ -467,6 +468,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
     { fn: registerListDevicesStatsTool, category: 'devices-general', permission: 'read' },
     { fn: registerGetAllDeviceBySiteTool, category: 'devices-general', permission: 'read' },
     { fn: registerGetFirmwareInfoTool, category: 'devices-general', permission: 'read' },
+    { fn: registerCheckFirmwareUpdatesTool, category: 'devices-general', permission: 'read' },
     { fn: registerGetGridAutoCheckUpgradeTool, category: 'devices-general', permission: 'read' },
     { fn: registerGetUplinkWiredDetailTool, category: 'devices-general', permission: 'read' },
     { fn: registerGetDownlinkWiredDevicesTool, category: 'devices-general', permission: 'read' },

@@ -8,6 +8,16 @@
   (`https://<region>-omada-northbound.tplinkcloud.com`) instead of a local controller. Setting
   it together with `OMADA_BASE_URL` is rejected, the region is validated as a region code, and
   strict TLS is mandatory in cloud mode. See `docs/CLOUD.md`.
+- `checkFirmwareUpdates` (read-only, `devices-general`): for every adopted device in a site, reports
+  current firmware vs the latest firmware the controller knows (per-device `latest-firmware-info`
+  plus the stable-channel firmware pool) with status `up-to-date`, `update-available` or `unknown`.
+  Versions are compared by number, build date and release; anything not comparable stays `unknown`.
+  Pool or per-device failures degrade to notes and warnings. It never triggers an upgrade.
+
+### Fixed
+
+- `listUpgradeOverviewFirmwares` omitted the spec-required `channel` query parameter and failed
+  with HTTP 400; it now sends `channel` (default 0, stable) and the tool accepts an optional `channel`.
 
 ## 1.0.0 - 2026-11-05
 

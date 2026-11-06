@@ -5,6 +5,9 @@ import type { CustomHeaders, GetDeviceStatsOptions, OmadaApiResponse, OmadaDevic
 import type { RequestHandler } from './request.js';
 import type { SiteOperations } from './site.js';
 
+/** Firmware pool channel: 0 stable, 1 release candidate, 2 beta. */
+export type FirmwareChannel = 0 | 1 | 2;
+
 /** Writable fields from 03-device.json: ApRadioSetting. GET-only fields must never be replayed. */
 export const apRadioSettingSchema = z
     .object({
@@ -1011,9 +1014,18 @@ export class DeviceOperations {
         return this.request.ensureSuccess(response);
     }
 
-    public async listUpgradeOverviewFirmwares(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
+    /**
+     * Get the firmware pool (latest known firmware per model).
+     * OperationId: getGridFirmwarePoolList. `channel` is required by the spec: 0 stable, 1 RC, 2 beta.
+     */
+    public async listUpgradeOverviewFirmwares(
+        page: number,
+        pageSize: number,
+        customHeaders?: CustomHeaders,
+        channel: FirmwareChannel = 0
+    ): Promise<unknown> {
         const path = this.buildPath('/upgrade/overview/firmwares');
-        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { page, pageSize }, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { channel, page, pageSize }, customHeaders);
         return this.request.ensureSuccess(response);
     }
 

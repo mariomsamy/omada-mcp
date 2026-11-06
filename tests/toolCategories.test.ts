@@ -293,8 +293,8 @@ describe('registerAllTools category filtering', () => {
         'getTrafficDistribution',
         'getIspLoad',
     ];
-    // 372 baseline operations + 54 ported operations (see docs/porting-skipped.md).
-    const fullOperationCount = 426;
+    // 372 baseline operations + 54 ported operations (see docs/porting-skipped.md) + checkFirmwareUpdates.
+    const fullOperationCount = 427;
     const deprecatedOperationCount = 28;
 
     function names(): string[] {
@@ -344,14 +344,14 @@ describe('registerAllTools category filtering', () => {
         ).toHaveLength(deprecatedOperationCount);
     });
 
-    it('has 430 distinct tool names across the standard and compact interfaces', () => {
+    it('has 431 distinct tool names across the standard and compact interfaces', () => {
         const categories = parseToolCategories('all:rw,recovery:rw').categories;
         registerAllTools(mockServer, mockClient, categories, { includeDeprecated: true });
         const standardNames = names();
         vi.mocked(mockServer.registerTool).mockClear();
         registerAllTools(mockServer, mockClient, categories, { includeDeprecated: true, catalogMode: 'compact' });
         expect(names().sort()).toEqual([...discoveryNames, 'callOperation'].sort());
-        expect(new Set([...standardNames, ...names()]).size).toBe(430);
+        expect(new Set([...standardNames, ...names()]).size).toBe(431);
     });
 
     it('write-only clients expose seven mutations and the three discovery tools', () => {
