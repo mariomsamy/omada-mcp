@@ -4,6 +4,17 @@
 
 ### Added
 
+- `groupSiteAlerts` (read, `dashboard`): reads a site's alerts for a window (default 24 h,
+  paginated, capped at 2,000 with a `truncated` flag) and groups them by alert type with count,
+  first/last seen, severity and de-duplicated subjects parsed from the message (rogue DHCP server
+  IP/MAC with sign-extended MACs such as `FFFFFFF4:28:...` normalised, IP-conflict clients, WAN
+  port). Subjects are matched to the current client/device list by exact MAC (or IP when no MAC);
+  unmatched subjects stay unknown.
+- `getNetworkAuditReport` (read, `dashboard`): one-call prioritised audit composed from devices,
+  gateway WAN status, clients, grouped alerts, rogue APs, IPS, pending devices and per-AP Wi-Fi
+  retry/drop/channel data. Returns severity-ordered findings with evidence and recommendations,
+  compact sections, a simple penalty score and an `unavailable` list; every sub-read degrades on
+  its own. Thresholds are named constants. No writes or scans.
 - `OMADA_CLOUD_REGION` (for example `euw1`) to use the TP-Link cloud Open API
   (`https://<region>-omada-northbound.tplinkcloud.com`) instead of a local controller. Setting
   it together with `OMADA_BASE_URL` is rejected, the region is validated as a region code, and

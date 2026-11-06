@@ -192,6 +192,7 @@ import { registerGetMeshSettingTool } from './getMeshSetting.js';
 import { registerGetMeshStatisticsTool } from './getMeshStatistics.js';
 import { registerGetMfaStatusTool } from './getMfaStatus.js';
 import { registerGetMulticastRateLimitTool } from './getMulticastRateLimit.js';
+import { registerGetNetworkAuditReportTool } from './getNetworkAuditReport.js';
 import { registerGetNetworkHealthSummaryTool } from './getNetworkHealthSummary.js';
 import { registerGetNtpSettingTool } from './getNtpSetting.js';
 import { registerGetOsgCustomAclListTool } from './getOsgCustomAclList.js';
@@ -333,6 +334,7 @@ import { registerGetWifiHealthSummaryTool } from './getWifiHealthSummary.js';
 import { registerGetWireguardSummaryTool } from './getWireguardSummary.js';
 import { registerGetWlanExperienceIndexTool } from './getWlanExperienceIndex.js';
 import { registerGetWlanGroupListTool } from './getWlanGroupList.js';
+import { registerGroupSiteAlertsTool } from './groupSiteAlerts.js';
 import { registerListAllSsidsTool } from './listAllSsids.js';
 import { registerListClientsTool } from './listClients.js';
 import { registerListClientsActivityTool } from './listClientsActivity.js';
@@ -449,6 +451,8 @@ const TOOL_REGISTRY: ToolEntry[] = [
     { fn: registerDiagnoseCameraConnectivityTool, category: 'client-insights', permission: 'read' },
     { fn: registerDiagnoseLogsTool, category: 'logs', permission: 'read' },
     { fn: registerGetWifiHealthSummaryTool, category: 'wireless-radio', permission: 'read' },
+    { fn: registerGroupSiteAlertsTool, category: 'dashboard', permission: 'read' },
+    { fn: registerGetNetworkAuditReportTool, category: 'dashboard', permission: 'read' },
     // --- Sites ---
     { fn: registerListSitesTool, category: 'sites', permission: 'read' },
     { fn: registerGetSiteDetailTool, category: 'sites', permission: 'read' },

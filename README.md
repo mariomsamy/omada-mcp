@@ -21,7 +21,7 @@ from a survey of 23 public Omada MCP projects
   ([ported and skipped](docs/porting-skipped.md)), and eight agent skills
   adapted from ChenyqThu/omada-skill and kaviththiranga/omada-mcp-server
   plus two new ones ([skills](docs/SKILLS.md)).
-- **Surface:** 426 operations (337 read, 89 write) plus 4 discovery
+- **Surface:** 428 operations (339 read, 89 write) plus 4 discovery
   tools; 28 deprecated aliases are hidden by default.
 - **Credits:** every source and what was taken from it is listed in
   [Credits](#credits) and [NOTICE.md](NOTICE.md).
@@ -759,7 +759,7 @@ Global threat intelligence, IPS alerts, and top-threat summaries.
 Single-call tools that internally aggregate multiple Omada API calls in parallel. Use these instead of chaining individual tools when you need a quick overview or are starting a troubleshooting session.
 
 <details>
-<summary>Read tools (4)</summary>
+<summary>Read tools (6)</summary>
 
 | Tool | Description |
 |---|---|
@@ -767,6 +767,8 @@ Single-call tools that internally aggregate multiple Omada API calls in parallel
 | `getGatewayHealth` | Composite: auto-discovers the gateway then fetches its detail (CPU, memory, firmware), WAN port statuses, LAN interface statuses, and port list in one call. Use for internet/WAN diagnostics. |
 | `diagnoseClient` | Composite: given a client MAC, IP, or hostname — fetches current connection status, detailed client info (VLAN, signal, policy), and recent connection history in one call. |
 | `getSecurityOverview` | Composite: combines active threat list (up to 20, newest first) and firewall settings into one response. Use for security posture checks or investigating alerts. |
+| `getNetworkAuditReport` | Composite, read-only: prioritised audit (severity-ordered findings with evidence and recommendations, compact sections, `unavailable` list) from devices, WAN status, clients, grouped alerts, rogue APs, IPS, pending devices and per-AP Wi-Fi retry/drop/channel data. No writes or scans. |
+| `groupSiteAlerts` | Composite, read-only: site alerts for a window (default 24 h, paginated with a cap and `truncated` flag) grouped by alert key with counts, first/last seen and parsed subjects (rogue DHCP IP/MAC, IP-conflict clients, WAN port), matched to current clients/devices by exact MAC/IP. |
 
 </details>
 
@@ -808,7 +810,7 @@ Site dashboard widgets: WiFi and switch summaries, PoE usage, CPU/memory top-N, 
 Site-level security insights: threat events, WIDS, rogue AP detection, and VPN tunnel stats.
 
 <details>
-<summary>Read tools (4)</summary>
+<summary>Read tools (6)</summary>
 
 | Tool | Description |
 |---|---|
@@ -973,7 +975,7 @@ User and role management for the controller.
 Cloud access, MFA, and remote binding status.
 
 <details>
-<summary>Read tools (4)</summary>
+<summary>Read tools (6)</summary>
 
 | Tool | Description |
 |---|---|
