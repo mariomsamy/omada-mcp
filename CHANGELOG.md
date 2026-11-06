@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `OMADA_CLOUD_REGION` (for example `euw1`) to use the TP-Link cloud Open API
+  (`https://<region>-omada-northbound.tplinkcloud.com`) instead of a local controller. Setting
+  it together with `OMADA_BASE_URL` is rejected, the region is validated as a region code, and
+  strict TLS is mandatory in cloud mode. See `docs/CLOUD.md`.
+
 ## 1.0.0 - 2026-11-05
 
 Security and audit follow-up release of the unified server.

@@ -251,7 +251,14 @@ const envSchema = z
         ),
 
         // Omada Client Configuration
-        baseUrl: z.string().url({ message: 'OMADA_BASE_URL must be a valid URL' }),
+        baseUrl: z
+            .string({ error: 'OMADA_BASE_URL is required (or set OMADA_CLOUD_REGION to use the TP-Link cloud)' })
+            .url({ message: 'OMADA_BASE_URL must be a valid URL' }),
+        cloudRegion: z
+            .string()
+            .regex(/^[a-z]{2,5}[0-9]{1,2}$/, 'OMADA_CLOUD_REGION must look like a TP-Link region code such as "euw1", "use1" or "aps1".')
+            .optional(),
+        baseUrlAndRegionBothSet: z.boolean().optional(),
         clientId: z.string().min(1, 'OMADA_CLIENT_ID must not be empty').optional(),
         clientSecret: z.string().min(1, 'OMADA_CLIENT_SECRET must not be empty').optional(),
         omadacId: z.string().min(1, 'OMADA_OMADAC_ID must not be empty').optional(),
@@ -282,6 +289,14 @@ const envSchema = z
     .refine((data) => !!data.clientSecret, {
         message: 'OMADA_CLIENT_SECRET is required',
         path: ['clientSecret'],
+    })
+    .refine((data) => !data.baseUrlAndRegionBothSet, {
+        message: 'Set either OMADA_BASE_URL (local/self-hosted controller) or OMADA_CLOUD_REGION (TP-Link cloud), not both.',
+        path: ['cloudRegion'],
+    })
+    .refine((data) => !data.cloudRegion || data.strictSsl, {
+        message: 'OMADA_CLOUD_REGION requires OMADA_STRICT_SSL=true; the TP-Link cloud API must always be reached with full TLS verification.',
+        path: ['strictSsl'],
     })
     .refine((data) => !!data.omadacId, { message: 'OMADA_OMADAC_ID is required', path: ['omadacId'] })
     .refine((data) => !data.useHttp || data.unsafeEnableHttp, {
@@ -362,6 +377,8 @@ export interface EnvironmentConfig {
     // baseUrl is always required (from env)
     // clientId, clientSecret, omadacId remain env-supplied even in legacy HTTP mode
     baseUrl: string;
+    /** Set when the TP-Link cloud northbound API is used instead of a local controller. */
+    cloudRegion?: string;
     clientId?: string;
     clientSecret?: string;
     omadacId?: string;
@@ -390,6 +407,30 @@ export interface EnvironmentConfig {
     httpBearerToken?: string;
 }
 
+/** Normalised OMADA_CLOUD_REGION (lower-case, trimmed) or undefined when unset/blank. */
+function normalizeCloudRegion(env: NodeJS.ProcessEnv): string | undefined {
+    const region = env.OMADA_CLOUD_REGION?.trim().toLowerCase();
+    return region ? region : undefined;
+}
+
+/**
+ * TP-Link cloud Open API ("northbound") base URL for a region, for example
+ * euw1 -> https://euw1-omada-northbound.tplinkcloud.com. The web console host
+ * (<region>-omada-cloud...) is not the API host.
+ */
+export function cloudBaseUrl(region: string): string {
+    return `https://${region}-omada-northbound.tplinkcloud.com`;
+}
+
+function resolveBaseUrl(env: NodeJS.ProcessEnv): string | undefined {
+    const explicit = env.OMADA_BASE_URL?.trim();
+    if (explicit) {
+        return explicit;
+    }
+    const region = normalizeCloudRegion(env);
+    return region && /^[a-z]{2,5}[0-9]{1,2}$/.test(region) ? cloudBaseUrl(region) : undefined;
+}
+
 export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): EnvironmentConfig {
     const parsed = envSchema.safeParse({
         capabilityProfile: env.OMADA_CAPABILITY_PROFILE,
@@ -401,7 +442,9 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Environ
         webhookAllowedHosts: env.OMADA_WEBHOOK_ALLOWED_HOSTS,
 
         // Omada Client Configuration
-        baseUrl: env.OMADA_BASE_URL,
+        baseUrl: resolveBaseUrl(env),
+        cloudRegion: normalizeCloudRegion(env),
+        baseUrlAndRegionBothSet: Boolean(env.OMADA_BASE_URL?.trim() && normalizeCloudRegion(env)),
         clientId: env.OMADA_CLIENT_ID,
         clientSecret: env.OMADA_CLIENT_SECRET,
         omadacId: env.OMADA_OMADAC_ID,
@@ -485,6 +528,7 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Environ
 
         // Omada Client Configuration
         baseUrl: parsed.data.baseUrl.replace(/\/$/, ''),
+        cloudRegion: parsed.data.cloudRegion,
         clientId: parsed.data.clientId,
         clientSecret: parsed.data.clientSecret,
         omadacId: parsed.data.omadacId,
