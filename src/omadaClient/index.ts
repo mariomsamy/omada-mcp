@@ -23,26 +23,26 @@ import type {
     RateLimitProfile,
     ThreatInfo,
 } from '../types/index.js';
-
+import type { TimeWindow } from '../utils/timeWindow.js';
 import { AccountOperations } from './account.js';
 import { ActionOperations, type DeviceLedType } from './actions.js';
 import { AuthManager } from './auth.js';
 import { ClientOperations } from './client.js';
 import { ControllerOperations } from './controller.js';
-import { DeviceOperations } from './device.js';
+import { DeviceOperations, type FirmwareChannel } from './device.js';
 import { InsightOperations, type SiteThreatListOptions } from './insight.js';
 import { LogOperations, type LogQueryOptions, type LogSelectionBody } from './log.js';
 import type { FileServerConfig, SiteFileRestoreInfo, SiteRestoreInfo } from './maintenance.js';
 import { MaintenanceOperations } from './maintenance.js';
 import { MonitorOperations } from './monitor.js';
-import { NetworkOperations, type SsidBasicConfig, type SsidUpdateSection } from './network.js';
+import { NetworkOperations, type SsidBasicConfig, type SsidDeviceType, type SsidUpdateSection } from './network.js';
 import { RequestHandler } from './request.js';
 import { ScheduleOperations } from './schedules.js';
 import { SecurityOperations } from './security.js';
 import { SiteOperations } from './site.js';
 import { type SwitchPortChange, SwitchPortOperations } from './switchPorts.js';
 
-export type { LogQueryOptions, SiteThreatListOptions };
+export type { FirmwareChannel, LogQueryOptions, SiteThreatListOptions };
 
 export type OmadaClientOptions = OmadaConnectionConfig;
 
@@ -708,8 +708,13 @@ export class OmadaClient {
         return await this.deviceOps.listUpgradeFirmwares(page, pageSize, customHeaders);
     }
 
-    public async listUpgradeOverviewFirmwares(page: number, pageSize: number, customHeaders?: CustomHeaders): Promise<unknown> {
-        return await this.deviceOps.listUpgradeOverviewFirmwares(page, pageSize, customHeaders);
+    public async listUpgradeOverviewFirmwares(
+        page: number,
+        pageSize: number,
+        customHeaders?: CustomHeaders,
+        channel: FirmwareChannel = 0
+    ): Promise<unknown> {
+        return await this.deviceOps.listUpgradeOverviewFirmwares(page, pageSize, customHeaders, channel);
     }
 
     public async listSitesStacks(siteId?: string, page?: number, pageSize?: number, customHeaders?: CustomHeaders): Promise<unknown> {
@@ -721,8 +726,8 @@ export class OmadaClient {
     }
 
     // Security operations (extended)
-    public async getTopThreats(customHeaders?: CustomHeaders): Promise<unknown[]> {
-        return await this.securityOps.getTopThreats(customHeaders);
+    public async getTopThreats(customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown> {
+        return await this.securityOps.getTopThreats(customHeaders, window);
     }
 
     public async getThreatSeverity(startTime: number, endTime: number, customHeaders?: CustomHeaders): Promise<unknown> {
@@ -1030,8 +1035,8 @@ export class OmadaClient {
         return await this.networkOps.getEapUrlFilters(siteId, customHeaders);
     }
 
-    public async listAllSsids(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
-        return await this.networkOps.listAllSsids(siteId, customHeaders);
+    public async listAllSsids(siteId?: string, customHeaders?: CustomHeaders, type: SsidDeviceType = 3): Promise<unknown[]> {
+        return await this.networkOps.listAllSsids(siteId, customHeaders, type);
     }
 
     public async getWanLanStatus(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
@@ -1328,12 +1333,12 @@ export class OmadaClient {
     }
 
     // Monitor / dashboard operations
-    public async getDashboardWifiSummary(siteId?: string, customHeaders?: CustomHeaders, window?: { start: number; end: number }): Promise<unknown> {
+    public async getDashboardWifiSummary(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown> {
         return await this.monitorOps.getDashboardWifiSummary(siteId, customHeaders, window);
     }
 
-    public async getDashboardSwitchSummary(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
-        return await this.monitorOps.getDashboardSwitchSummary(siteId, customHeaders);
+    public async getDashboardSwitchSummary(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown> {
+        return await this.monitorOps.getDashboardSwitchSummary(siteId, customHeaders, window);
     }
 
     public async getTrafficDistribution(siteId?: string, start?: number, end?: number, customHeaders?: CustomHeaders): Promise<unknown> {
@@ -1344,28 +1349,28 @@ export class OmadaClient {
         return await this.monitorOps.getRetryAndDroppedRate(siteId, start, end, customHeaders);
     }
 
-    public async getDashboardTrafficActivities(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
-        return await this.monitorOps.getDashboardTrafficActivities(siteId, customHeaders);
+    public async getDashboardTrafficActivities(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown> {
+        return await this.monitorOps.getDashboardTrafficActivities(siteId, customHeaders, window);
     }
 
     public async getDashboardPoEUsage(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
         return await this.monitorOps.getDashboardPoEUsage(siteId, customHeaders);
     }
 
-    public async getDashboardTopCpuUsage(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
-        return await this.monitorOps.getDashboardTopCpuUsage(siteId, customHeaders);
+    public async getDashboardTopCpuUsage(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown[]> {
+        return await this.monitorOps.getDashboardTopCpuUsage(siteId, customHeaders, window);
     }
 
-    public async getDashboardTopMemoryUsage(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
-        return await this.monitorOps.getDashboardTopMemoryUsage(siteId, customHeaders);
+    public async getDashboardTopMemoryUsage(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown[]> {
+        return await this.monitorOps.getDashboardTopMemoryUsage(siteId, customHeaders, window);
     }
 
-    public async getDashboardMostActiveSwitches(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
-        return await this.monitorOps.getDashboardMostActiveSwitches(siteId, customHeaders);
+    public async getDashboardMostActiveSwitches(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown[]> {
+        return await this.monitorOps.getDashboardMostActiveSwitches(siteId, customHeaders, window);
     }
 
-    public async getDashboardMostActiveEaps(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
-        return await this.monitorOps.getDashboardMostActiveEaps(siteId, customHeaders);
+    public async getDashboardMostActiveEaps(siteId?: string, customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown[]> {
+        return await this.monitorOps.getDashboardMostActiveEaps(siteId, customHeaders, window);
     }
 
     public async getDashboardOverview(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
@@ -1405,7 +1410,7 @@ export class OmadaClient {
         return await this.insightOps.listSiteThreatManagement(options, siteId, customHeaders);
     }
 
-    public async getWids(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+    public async getWids(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
         return await this.insightOps.getWids(siteId, customHeaders);
     }
 

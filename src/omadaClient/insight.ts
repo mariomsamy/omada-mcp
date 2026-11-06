@@ -55,13 +55,12 @@ export class InsightOperations {
 
     /**
      * Get WIDS (Wireless Intrusion Detection System) information for a site.
-     * OperationId: getWids
+     * OperationId: getGridWidsData. The spec requires page/pageSize, so read every page.
      */
-    public async getWids(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown> {
+    public async getWids(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/insight/wids`);
-        const response = await this.request.get<OmadaApiResponse<unknown>>(path, undefined, customHeaders);
-        return this.request.ensureSuccess(response);
+        return await this.request.fetchPaginated<unknown>(path, {}, customHeaders);
     }
 
     /**

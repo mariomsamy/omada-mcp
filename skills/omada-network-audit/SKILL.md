@@ -47,6 +47,12 @@ them. In compact catalog mode use `searchOperations` /
 
 ## Workflow
 
+0. **Quick pass (optional).** `getNetworkAuditReport` returns a
+   prioritised findings list (severity, evidence, recommendation) plus
+   compact sections and an `unavailable` list in one read-only call.
+   Use it as the starting point or for a fast check; its `score` is a
+   simple severity penalty, not the rubric score from step 7. Use
+   `groupSiteAlerts` to drill into alert groups.
 1. **Scope.** `listSites`, then confirm the site. Record the audit time
    in ISO form and the controller version from `getControllerStatus`.
    Use `getServerCapabilities` to note the active profile and categories.

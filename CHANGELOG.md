@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `detail: "summary" | "full"` on `getWifiHealthSummary` and `diagnoseLogs` (default `summary`).
+  Wi-Fi summary keeps findings, per-AP retry/drop statistics (samples, mean, max, latest) and
+  occupied channels only, and drops the raw five-minute series (live: ~18 KB per hour of window,
+  ~240 KB for 24 hours, in `full`). Log summary reports notification settings as enabled counts.
+  `full` returns the previous payload.
+- Optional `start`/`end` (Unix seconds) on the time-range dashboard tools and `getTopThreats`;
+  optional `type` on `listAllSsids`.
+- `checkFirmwareUpdates` (read-only, `devices-general`): for every adopted device in a site, reports
+  current firmware vs the latest firmware the controller knows (per-device `latest-firmware-info`
+  plus the stable-channel firmware pool) with status `up-to-date`, `update-available` or `unknown`.
+  Versions are compared by number, build date and release; anything not comparable stays `unknown`.
+  Pool or per-device failures degrade to notes and warnings. It never triggers an upgrade.
+- `groupSiteAlerts` (read, `dashboard`): reads a site's alerts for a window (default 24 h,
+  paginated, capped at 2,000 with a `truncated` flag) and groups them by alert type with count,
+  first/last seen, severity and de-duplicated subjects parsed from the message (rogue DHCP server
+  IP/MAC with sign-extended MACs such as `FFFFFFF4:28:...` normalised, IP-conflict clients, WAN
+  port). Subjects are matched to the current client/device list by exact MAC (or IP when no MAC);
+  unmatched subjects stay unknown.
+- `getNetworkAuditReport` (read, `dashboard`): one-call prioritised audit composed from devices,
+  gateway WAN status, clients, grouped alerts, rogue APs, IPS, pending devices and per-AP Wi-Fi
+  retry/drop/channel data. Returns severity-ordered findings with evidence and recommendations,
+  compact sections, a simple penalty score and an `unavailable` list; every sub-read degrades on
+  its own. Thresholds are named constants. No writes or scans.
+
+### Fixed
+
+- HTTP 400 on controller 6.3.0.111 caused by missing spec-required query parameters (all in
+  `docs/openapi/`):
+  - `getDashboardSwitchSummary`, `getDashboardTrafficActivities`, `getDashboardTopCpuUsage`,
+    `getDashboardTopMemoryUsage`, `getDashboardMostActiveSwitches`, `getDashboardMostActiveEaps`
+    now send the required `start`/`end` (default: last hour).
+  - `getTopThreats` (`getGlobalTopThreatList`) now sends the required `startTime`/`endTime`
+    (default: last 24 hours).
+  - `getWids` (`getGridWidsData`) now sends the required `page`/`pageSize` and reads all pages.
+  - `listAllSsids` (`getSsidsBySite`) now sends the required `type` (default 3, AP and wireless
+    router) instead of unsupported pagination parameters.
+  - A one-sided or empty `start`/`end` window is rejected before any controller request.
+- Output redaction no longer masks the firewall `synCookies` toggle (it matched the `cookie`
+  substring). Real secrets (`password`, `secret`, `token`, `key`, cookies) are still masked.
+- `listUpgradeOverviewFirmwares` omitted the spec-required `channel` query parameter and failed
+  with HTTP 400; it now sends `channel` (default 0, stable) and the tool accepts an optional `channel`.
+
 ## 1.0.0 - 2026-11-05
 
 Security and audit follow-up release of the unified server.

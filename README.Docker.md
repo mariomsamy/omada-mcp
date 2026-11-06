@@ -152,8 +152,8 @@ HTTP is not part of the supported container baseline. It only starts when both o
 
 | Tool | Description |
 | --- | --- |
-| `getWifiHealthSummary` | Composes dashboard, channel, interference and retry evidence with timestamps, missing sections and bounded review heuristics. Read-only. |
-| `diagnoseLogs` | Reads recent event, alert and audit pages plus log settings; distinguishes unavailable data from empty results and reports incomplete history. |
+| `getWifiHealthSummary` | Composes dashboard, channel, interference and retry evidence with timestamps, missing sections and bounded review heuristics. Read-only. `detail: "summary"` (default) keeps findings, per-AP retry/drop averages and occupied-channel utilisation; `detail: "full"` adds raw time series. |
+| `diagnoseLogs` | Reads recent event, alert and audit pages plus log settings; distinguishes unavailable data from empty results and reports incomplete history. `detail: "summary"` (default) reports notification settings as enabled counts; `detail: "full"` lists every type. |
 | `diagnoseCameraConnectivity` | Resolves a camera client and reads its detail/session evidence; reports missing data and network drilldowns without claiming to diagnose Frigate inference. |
 | `setApRadio` | Previews or updates one supported AP band with advertised channel/width validation, preserved sibling settings and bounded readback verification. |
 | `updateSsid` | Previews or updates SSID name, broadcast visibility, guest status or sharing policy while preserving required security fields. Broadcast visibility is not SSID enable/disable. |
@@ -288,6 +288,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | `listPendingDevices` | Lists devices pending adoption in a site. |
 | `getAllDeviceBySite` | Gets all devices in a site including offline and disconnected devices. |
 | `getFirmwareInfo` | Gets the latest available firmware info for a device. Use `listDevices` for MACs. |
+| `checkFirmwareUpdates` | Read-only firmware audit of every adopted device in a site: current vs latest known firmware (per-device latest info plus the stable firmware pool) with status `up-to-date`, `update-available` or `unknown`. Never upgrades; unknown is never guessed. |
 | `getGridAutoCheckUpgrade` | Gets the auto-check firmware upgrade plan list (paginated).                    |
 | `listSwitchNetworks` | Lists VLAN network assignments for a switch (paginated). Requires `switchMac`. |
 | `getSwitchGeneralConfig` | Gets general configuration for a switch. Requires `switchMac`.                 |
@@ -330,7 +331,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | `getUpgradeOverviewCritical` | Get the number of devices/models with critical firmware upgrades available. |
 | `getUpgradeOverviewTryBeta` | Get the current status of the try-beta firmware upgrade switch. |
 | `listUpgradeFirmwares` | List available firmware packages for upgrade (paginated). |
-| `listUpgradeOverviewFirmwares` | List firmware overview for upgradeable devices (paginated). |
+| `listUpgradeOverviewFirmwares` | List firmware overview for upgradeable devices (paginated; optional `channel`: 0 stable (default), 1 RC, 2 beta). |
 | `listSitesStacks` | List switch stacks in a site (paginated). |
 | `getSitesDeviceWhiteList` | Get the device adoption whitelist for a site (paginated). |
 | `getSitesGatewaysGeneralConfig` | Get general configuration for a gateway. Requires `gatewayMac`. |
@@ -371,7 +372,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | `getWlanGroupList` | Gets the list of WLAN groups configured in a site. |
 | `getSsidList` | Gets the list of SSIDs in a WLAN group. |
 | `getSsidDetail` | Gets detailed information for a specific SSID. Required: `wlanId` and `ssidId`. |
-| `listAllSsids` | Lists wireless SSIDs across all WLAN groups. |
+| `listAllSsids` | Lists wireless SSIDs across all WLAN groups. Optional `type` (1 AP, 2 wireless router, 3 both; default 3). |
 | `getFirewallSetting` | Gets the site-global firewall settings returned by the official Omada firewall endpoint. |
 | `setFirewallSetting` | Updates site firewall settings with dry-run preview using the official Omada Open API firewall endpoint. |
 | `setAclConfigTypeSetting` | Updates the gateway ACL mode (`through profiles` or `custom`) with dry-run preview. |
@@ -470,7 +471,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | Tool            | Description                                               |
 | --------------- | --------------------------------------------------------- |
 | `getThreatList` | Gets global threat management list with filtering.        |
-| `getTopThreats` | Gets top threats from the global threat management view.  |
+| `getTopThreats` | Gets top threats from the global threat management view. Optional `start`/`end` (Unix seconds); default: last 24 hours. |
 
 ### Composite Troubleshooting Tools
 
@@ -482,19 +483,21 @@ Single-call tools that internally aggregate multiple Omada API calls in parallel
 | `getGatewayHealth` | Composite: auto-discovers the gateway then fetches its detail (CPU, memory, firmware), WAN port statuses, LAN interface statuses, and port list in one call. Use for internet/WAN diagnostics. |
 | `diagnoseClient` | Composite: given a client MAC, IP, or hostname — fetches current connection status, detailed client info (VLAN, signal, policy), and recent connection history in one call. |
 | `getSecurityOverview` | Composite: combines active threat list (up to 20, newest first) and firewall settings into one response. Use for security posture checks or investigating alerts. |
+| `getNetworkAuditReport` | Composite, read-only: prioritised audit (severity-ordered findings with evidence and recommendations, compact sections, `unavailable` list) from devices, WAN status, clients, grouped alerts, rogue APs, IPS, pending devices and per-AP Wi-Fi retry/drop/channel data. No writes or scans. |
+| `groupSiteAlerts` | Composite, read-only: site alerts for a window (default 24 h, paginated with a cap and `truncated` flag) grouped by alert key with counts, first/last seen and parsed subjects (rogue DHCP IP/MAC, IP-conflict clients, WAN port), matched to current clients/devices by exact MAC/IP. |
 
 ### Dashboard / Monitor
 
 | Tool                             | Description                                                     |
 | -------------------------------- | --------------------------------------------------------------- |
-| `getDashboardWifiSummary` | Gets WiFi summary from the site dashboard. |
-| `getDashboardSwitchSummary` | Gets switch summary from the site dashboard. |
-| `getDashboardTrafficActivities` | Gets traffic activity data from the site dashboard. |
+| `getDashboardWifiSummary` | Gets WiFi summary from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardSwitchSummary` | Gets switch summary from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardTrafficActivities` | Gets traffic activity data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
 | `getDashboardPoEUsage` | Gets PoE usage data from the site dashboard. |
-| `getDashboardTopCpuUsage` | Gets top CPU usage data from the site dashboard. |
-| `getDashboardTopMemoryUsage` | Gets top memory usage data from the site dashboard. |
-| `getDashboardMostActiveSwitches` | Gets most active switches from the site dashboard.              |
-| `getDashboardMostActiveEaps` | Gets most active access points from the site dashboard. |
+| `getDashboardTopCpuUsage` | Gets top CPU usage data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardTopMemoryUsage` | Gets top memory usage data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardMostActiveSwitches` | Gets most active switches from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardMostActiveEaps` | Gets most active access points from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
 | `getDashboardOverview` | Get the site overview: device counts, client counts, connectivity graph, and overall health status. |
 | `getTrafficDistribution` | Gets traffic distribution by protocol/app type over a time range. Requires `start` and `end` timestamps (seconds). |
 | `getRetryAndDroppedRate` | Gets wireless retry rate and dropped packet rate over a time range. Requires `start` and `end` timestamps (seconds). |
@@ -510,7 +513,7 @@ Single-call tools that internally aggregate multiple Omada API calls in parallel
 | Tool                       | Description                                                        |
 | -------------------------- | ------------------------------------------------------------------ |
 | `listSiteThreatManagement` | Lists site-level threat management events.                         |
-| `getWids` | Gets WIDS (Wireless Intrusion Detection) information for a site. |
+| `getWids` | Gets WIDS (Wireless Intrusion Detection) information for a site. Reads all pages. |
 | `getRogueAps` | Gets rogue access points detected in a site. |
 | `getVpnTunnelStats` | Gets VPN tunnel statistics for a site. |
 ### VPN

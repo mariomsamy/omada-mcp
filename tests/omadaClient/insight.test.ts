@@ -79,14 +79,15 @@ describe('InsightOperations', () => {
     });
 
     describe('getWids', () => {
-        it('should fetch WIDS information', async () => {
-            const mockResponse: OmadaApiResponse<unknown> = { errorCode: 0, result: { attacks: 0 } };
-            vi.mocked(mockRequest.get).mockResolvedValue(mockResponse);
+        it('reads every page of WIDS entries because the spec requires page and pageSize', async () => {
+            const entries = [{ mac: '00:11:22:33:44:55', type: 'deauth-flood' }];
+            vi.mocked(mockRequest.fetchPaginated).mockResolvedValue(entries);
 
             const result = await insightOps.getWids('site-123');
 
-            expect(result).toEqual({ attacks: 0 });
-            expect(mockRequest.get).toHaveBeenCalledWith('/openapi/v1/test-omadac/sites/site-123/insight/wids', undefined, undefined);
+            expect(result).toEqual(entries);
+            expect(mockRequest.fetchPaginated).toHaveBeenCalledWith('/openapi/v1/test-omadac/sites/site-123/insight/wids', {}, undefined);
+            expect(mockRequest.get).not.toHaveBeenCalled();
         });
     });
 

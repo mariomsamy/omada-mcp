@@ -88,4 +88,104 @@ describe('getWifiHealthSummary', () => {
             findings: [],
         });
     });
+
+    describe('detail', () => {
+        const series = (field: string, rateField: string, rates: number[]) => ({
+            [field]: rates.map((rate, index) => ({ time: 1792841700 + index * 300, [rateField]: rate })),
+        });
+        const retries = {
+            retryEaps: [{ apMac: 'AA-BB-CC-DD-EE-01', name: 'Kitchen', avg: 5, ...series('retries', 'retryRate', [4, 6, 8]) }],
+            droppedEaps: [{ apMac: 'AA-BB-CC-DD-EE-01', name: 'Kitchen', avg: 0.2, ...series('dropouts', 'dropRate', [0.1, 0.3]) }],
+        };
+        const channels = {
+            channels2g: [
+                {
+                    channel: 1,
+                    apNum: 1,
+                    wrNum: 0,
+                    clientNum: 4,
+                    channelUtilization: 14,
+                    apWithClientInfoList: [
+                        { name: 'Kitchen', mac: 'AA-BB-CC-DD-EE-01', clientNum: 4, model: 'EAP', type: 'ap', channelUtilization: 14 },
+                    ],
+                },
+                { channel: 2 },
+                { channel: 3, apNum: 0, wrNum: 0, clientNum: 0 },
+            ],
+            channels5g: [{ channel: 44, apNum: 0, wrNum: 1, clientNum: 0, channelUtilization: 2 }],
+            channels6g: [],
+            note: 'kept',
+        };
+
+        function setupDetail() {
+            const { client, tool } = setup();
+            client.getRetryAndDroppedRate.mockResolvedValue(retries);
+            client.getChannels.mockResolvedValue(channels);
+            return { client, tool };
+        }
+
+        it('defaults to summary: drops time series and unoccupied channels but keeps findings and per-AP averages', async () => {
+            const { tool } = setupDetail();
+            const result = await tool.invoke();
+            const sections = result.sections as Record<string, { data: Record<string, unknown> }>;
+
+            expect(result.detail).toBe('summary');
+            expect(result.findings).toHaveLength(1);
+            expect(sections.retries.data).toEqual({
+                retryEaps: [{ apMac: 'AA-BB-CC-DD-EE-01', name: 'Kitchen', avg: 5, retryRateStats: { samples: 3, mean: 6, max: 8, latest: 8 } }],
+                droppedEaps: [
+                    { apMac: 'AA-BB-CC-DD-EE-01', name: 'Kitchen', avg: 0.2, dropRateStats: { samples: 2, mean: 0.2, max: 0.3, latest: 0.3 } },
+                ],
+            });
+            expect(sections.channels.data).toEqual({
+                channels2g: [
+                    {
+                        channel: 1,
+                        apNum: 1,
+                        wrNum: 0,
+                        clientNum: 4,
+                        channelUtilization: 14,
+                        aps: [{ name: 'Kitchen', mac: 'AA-BB-CC-DD-EE-01', clientNum: 4, channelUtilization: 14 }],
+                    },
+                ],
+                channels5g: [{ channel: 44, apNum: 0, wrNum: 1, clientNum: 0, channelUtilization: 2 }],
+                channels6g: [],
+                note: 'kept',
+            });
+            expect(JSON.stringify(result)).not.toContain('"time"');
+            expect(result.interpretation).toEqual(expect.arrayContaining([expect.stringContaining('detail="full"')]));
+        });
+
+        it('returns the raw controller payload with detail=full', async () => {
+            const { tool } = setupDetail();
+            const result = await tool.invoke({ detail: 'full' });
+            const sections = result.sections as Record<string, { data: unknown }>;
+
+            expect(result.detail).toBe('full');
+            expect(sections.retries.data).toEqual(retries);
+            expect(sections.channels.data).toEqual(channels);
+            expect(tool.schema().safeParse({ detail: 'verbose' }).success).toBe(false);
+        });
+
+        it('keeps unavailable sections and unexpected shapes unchanged in summary mode', async () => {
+            const { client, tool } = setup();
+            client.getRetryAndDroppedRate.mockRejectedValue(new Error('unsupported'));
+            client.getChannels.mockResolvedValue({ channels2g: 'n/a' });
+            const result = await tool.invoke();
+            expect(result.sections).toMatchObject({
+                retries: { status: 'unavailable' },
+                channels: { status: 'ok', data: { channels2g: 'n/a' } },
+            });
+        });
+
+        it('summarises entries without a usable series as zero samples', async () => {
+            const { client, tool } = setup();
+            client.getRetryAndDroppedRate.mockResolvedValue({ retryEaps: [{ apMac: 'x', retries: 'bad' }, null], droppedEaps: 'n/a' });
+            const result = await tool.invoke();
+            expect((result.sections as Record<string, { data: unknown }>).retries.data).toEqual({
+                retryEaps: [{ apMac: 'x', retryRateStats: { samples: 0 } }, { retryRateStats: { samples: 0 } }],
+                droppedEaps: 'n/a',
+            });
+        });
+    });
 });

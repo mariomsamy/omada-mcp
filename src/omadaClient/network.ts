@@ -4,6 +4,9 @@ import type { CustomHeaders, OmadaApiResponse, PaginatedResult } from '../types/
 import type { RequestHandler } from './request.js';
 import type { SiteOperations } from './site.js';
 
+/** Device type filter for getSsidsBySite: 1 = AP, 2 = wireless router, 3 = AP and wireless router. */
+export type SsidDeviceType = 1 | 2 | 3;
+
 // Writable request fields from 04-site-setting.json. Strip GET-only metadata when
 // constructing the complete, required basic-config body; tool changes are strict.
 const ssidPskSettingOpenApiVOSchema = z
@@ -603,12 +606,24 @@ export class NetworkOperations {
 
     /**
      * List wireless SSIDs across all WLAN groups.
-     * OperationId: getSsidListAll
+     * OperationId: getSsidsBySite (04-site-setting.json). The spec requires the `type` query
+     * parameter (1: AP, 2: wireless router, 3: both) and takes no pagination parameters.
      */
-    public async listAllSsids(siteId?: string, customHeaders?: CustomHeaders): Promise<unknown[]> {
+    public async listAllSsids(siteId?: string, customHeaders?: CustomHeaders, type: SsidDeviceType = 3): Promise<unknown[]> {
         const resolvedSiteId = await this.site.resolveSiteId(siteId);
         const path = this.buildPath(`/sites/${encodeURIComponent(resolvedSiteId)}/wireless-network/ssids`);
-        return await this.request.fetchPaginated<unknown>(path, {}, customHeaders);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { type }, customHeaders);
+        const result = this.request.ensureSuccess(response);
+        if (Array.isArray(result)) return result;
+        if (result && typeof result === 'object') {
+            const record = result as Record<string, unknown>;
+            for (const field of ['data', 'ssidList', 'ssids']) {
+                const entries = record[field];
+                if (Array.isArray(entries)) return entries;
+            }
+        }
+        if (result === undefined || result === null) return [];
+        throw new Error('Unexpected SSID list shape from getSsidsBySite');
     }
 
     /**

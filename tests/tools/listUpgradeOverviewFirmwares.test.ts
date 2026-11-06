@@ -47,7 +47,7 @@ describe('tools/listUpgradeOverviewFirmwares', () => {
 
             const result = await toolHandler({ page: 1, pageSize: 10 }, { sessionId: 'test-session' });
 
-            expect(mockClient.listUpgradeOverviewFirmwares).toHaveBeenCalledWith(1, 10, undefined);
+            expect(mockClient.listUpgradeOverviewFirmwares).toHaveBeenCalledWith(1, 10, undefined, 0);
             expect(result).toEqual({
                 structuredContent: mockData,
                 content: [{ type: 'text', text: JSON.stringify(mockData, null, 2) }],
@@ -61,7 +61,17 @@ describe('tools/listUpgradeOverviewFirmwares', () => {
 
             await toolHandler({}, {});
 
-            expect(mockClient.listUpgradeOverviewFirmwares).toHaveBeenCalledWith(1, 10, undefined);
+            expect(mockClient.listUpgradeOverviewFirmwares).toHaveBeenCalledWith(1, 10, undefined, 0);
+        });
+
+        it('should pass an explicit channel', async () => {
+            (mockClient.listUpgradeOverviewFirmwares as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+            registerListUpgradeOverviewFirmwaresTool(mockServer, mockClient);
+
+            await toolHandler({ page: 2, pageSize: 50, channel: 2 }, {});
+
+            expect(mockClient.listUpgradeOverviewFirmwares).toHaveBeenCalledWith(2, 50, undefined, 2);
         });
 
         it('should return empty content on undefined response', async () => {

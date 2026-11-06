@@ -11,11 +11,11 @@ every tool name in them exists.
 
 | Skill | Kind | What it does | Profile it needs |
 | --- | --- | --- | --- |
-| [omada-network-audit](../skills/omada-network-audit/SKILL.md) | read-only | Health and security review: six-dimension Wi-Fi score, a 20-item security checklist, inventory, optional baseline for re-audits | `safe-read` + `OMADA_TOOL_CATEGORIES=all:r` |
+| [omada-network-audit](../skills/omada-network-audit/SKILL.md) | read-only | Health and security review: six-dimension Wi-Fi score, a 20-item security checklist, inventory, optional baseline for re-audits; `getNetworkAuditReport` gives a one-call prioritised first pass | `safe-read` + `OMADA_TOOL_CATEGORIES=all:r` |
 | [omada-safe-change](../skills/omada-safe-change/SKILL.md) | write procedure | Dry run -> review -> apply -> read-back for any write tool; write -> read-back map, status contract, risk tiers, Omada error codes, hardware quirks | the write's own category (`ops-write`, `admin` or a narrow explicit grant) |
 | [omada-wifi-troubleshoot](../skills/omada-wifi-troubleshoot/SKILL.md) | read-only | "Wi-Fi is slow" playbook: site evidence, client dossier, AP zoom, four-line verdict | `safe-read` + `all:r` |
 | [omada-roaming-dfs](../skills/omada-roaming-dfs/SKILL.md) | read, hands off writes | Roaming and DFS: configured vs on-air radios, radar fallback, channel overlap, field encodings, measurement method | `all:r`; changes need `devices-ap:rw` / `wireless-radio:rw` |
-| [omada-alert-triage](../skills/omada-alert-triage/SKILL.md) | read-only | Group and rank alerts, tie them to devices and uplinks | `safe-read` + `all:r` |
+| [omada-alert-triage](../skills/omada-alert-triage/SKILL.md) | read-only | Group and rank alerts, tie them to devices and uplinks (`groupSiteAlerts` does the grouping and MAC/IP matching in one call) | `safe-read` + `all:r` |
 | [omada-support-assist](../skills/omada-support-assist/SKILL.md) | read-only | Ticket draft: alerts, events, audit trail, closest preceding change | `safe-read` + `all:r` |
 | [omada-bulk-site-onboard](../skills/omada-bulk-site-onboard/SKILL.md) | read, then writes in waves | Multi-site conformance against a template or reference site, preflight, backups, waves | `all:r`; waves need `maintenance:rw` plus the categories being changed |
 | [omada-guest-portal-wizard](../skills/omada-guest-portal-wizard/SKILL.md) | read, then writes | Guest VLAN and SSID preparation, portal steps for the controller UI, isolation test, privacy checklist | `all:r`; changes need `network-lan:rw`, `wireless-ssid:rw` |
