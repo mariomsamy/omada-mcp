@@ -20,6 +20,7 @@ describe('tools/getDashboardSwitchSummary', () => {
             getDashboardSwitchSummary: vi.fn(),
         } as unknown as OmadaClient;
 
+        vi.spyOn(Date, 'now').mockReturnValue(1792845296789);
         vi.spyOn(loggerModule.logger, 'info').mockImplementation(() => {
             // Mock implementation
         });
@@ -46,7 +47,7 @@ describe('tools/getDashboardSwitchSummary', () => {
 
             const result = await toolHandler({}, { sessionId: 'test-session' });
 
-            expect(mockClient.getDashboardSwitchSummary).toHaveBeenCalledWith(undefined, undefined);
+            expect(mockClient.getDashboardSwitchSummary).toHaveBeenCalledWith(undefined, undefined, { start: 1792841696, end: 1792845296 });
             expect(result).toEqual({
                 structuredContent: mockData,
                 content: [{ type: 'text', text: JSON.stringify(mockData, null, 2) }],
@@ -61,7 +62,28 @@ describe('tools/getDashboardSwitchSummary', () => {
 
             await toolHandler({ siteId: 'test-site' }, { sessionId: 'test-session' });
 
-            expect(mockClient.getDashboardSwitchSummary).toHaveBeenCalledWith('test-site', undefined);
+            expect(mockClient.getDashboardSwitchSummary).toHaveBeenCalledWith('test-site', undefined, { start: 1792841696, end: 1792845296 });
+        });
+
+        it('sends the spec-required start/end window, defaulting to the last hour', async () => {
+            (mockClient.getDashboardSwitchSummary as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            registerGetDashboardSwitchSummaryTool(mockServer, mockClient);
+
+            await toolHandler({ start: 1700000000, end: 1700003600 }, { sessionId: 'test-session' });
+
+            expect(mockClient.getDashboardSwitchSummary).toHaveBeenCalledWith(undefined, undefined, { start: 1700000000, end: 1700003600 });
+        });
+
+        it('rejects a half-open or empty window before calling the controller', async () => {
+            registerGetDashboardSwitchSummaryTool(mockServer, mockClient);
+
+            await expect(toolHandler({ start: 1700000000 }, { sessionId: 'test-session' })).rejects.toThrow(
+                'start and end must be provided together'
+            );
+            await expect(toolHandler({ start: 1700003600, end: 1700000000 }, { sessionId: 'test-session' })).rejects.toThrow(
+                'start must be earlier than end'
+            );
+            expect(mockClient.getDashboardSwitchSummary).not.toHaveBeenCalled();
         });
 
         it('should handle errors', async () => {

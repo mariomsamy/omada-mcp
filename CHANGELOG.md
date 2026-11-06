@@ -8,6 +8,29 @@
   (`https://<region>-omada-northbound.tplinkcloud.com`) instead of a local controller. Setting
   it together with `OMADA_BASE_URL` is rejected, the region is validated as a region code, and
   strict TLS is mandatory in cloud mode. See `docs/CLOUD.md`.
+- `detail: "summary" | "full"` on `getWifiHealthSummary` and `diagnoseLogs` (default `summary`).
+  Wi-Fi summary keeps findings, per-AP retry/drop statistics (samples, mean, max, latest) and
+  occupied channels only, and drops the raw five-minute series (live: ~18 KB per hour of window,
+  ~240 KB for 24 hours, in `full`). Log summary reports notification settings as enabled counts.
+  `full` returns the previous payload.
+- Optional `start`/`end` (Unix seconds) on the time-range dashboard tools and `getTopThreats`;
+  optional `type` on `listAllSsids`.
+
+### Fixed
+
+- HTTP 400 on controller 6.3.0.111 caused by missing spec-required query parameters (all in
+  `docs/openapi/`):
+  - `getDashboardSwitchSummary`, `getDashboardTrafficActivities`, `getDashboardTopCpuUsage`,
+    `getDashboardTopMemoryUsage`, `getDashboardMostActiveSwitches`, `getDashboardMostActiveEaps`
+    now send the required `start`/`end` (default: last hour).
+  - `getTopThreats` (`getGlobalTopThreatList`) now sends the required `startTime`/`endTime`
+    (default: last 24 hours).
+  - `getWids` (`getGridWidsData`) now sends the required `page`/`pageSize` and reads all pages.
+  - `listAllSsids` (`getSsidsBySite`) now sends the required `type` (default 3, AP and wireless
+    router) instead of unsupported pagination parameters.
+  - A one-sided or empty `start`/`end` window is rejected before any controller request.
+- Output redaction no longer masks the firewall `synCookies` toggle (it matched the `cookie`
+  substring). Real secrets (`password`, `secret`, `token`, `key`, cookies) are still masked.
 
 ## 1.0.0 - 2026-11-05
 

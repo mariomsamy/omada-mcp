@@ -93,10 +93,34 @@ describe('MonitorOperations', () => {
             const mockResponse: OmadaApiResponse<unknown> = { errorCode: 0, result: { totalSwitches: 3 } };
             vi.mocked(mockRequest.get).mockResolvedValue(mockResponse);
 
+            vi.spyOn(Date, 'now').mockReturnValue(1792845296789);
             const result = await monitorOps.getDashboardSwitchSummary('site-123');
 
             expect(result).toEqual({ totalSwitches: 3 });
-            expect(mockRequest.get).toHaveBeenCalledWith('/openapi/v1/test-omadac/sites/site-123/dashboard/switch-summary', undefined, undefined);
+            expect(mockRequest.get).toHaveBeenCalledWith(
+                '/openapi/v1/test-omadac/sites/site-123/dashboard/switch-summary',
+                { start: 1792841696, end: 1792845296 },
+                undefined
+            );
+        });
+    });
+
+    describe('spec-required start/end window on dashboard time-range endpoints', () => {
+        const window = { start: 1700000000, end: 1700003600 };
+        it.each([
+            ['getDashboardSwitchSummary', 'switch-summary'],
+            ['getDashboardTrafficActivities', 'traffic-activities'],
+            ['getDashboardTopCpuUsage', 'top-device-cpu-usage'],
+            ['getDashboardTopMemoryUsage', 'top-device-memory-usage'],
+            ['getDashboardMostActiveSwitches', 'most-active-switches'],
+            ['getDashboardMostActiveEaps', 'most-active-eaps'],
+        ] as const)('%s sends start and end to dashboard/%s', async (method, route) => {
+            vi.mocked(mockRequest.get).mockResolvedValue({ errorCode: 0, result: [] });
+            const headers = { 'X-Request-Id': 'window' };
+
+            await monitorOps[method]('site-123', headers, window);
+
+            expect(mockRequest.get).toHaveBeenCalledWith(`/openapi/v1/test-omadac/sites/site-123/dashboard/${route}`, window, headers);
         });
     });
 

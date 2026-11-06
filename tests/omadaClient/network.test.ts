@@ -1244,14 +1244,34 @@ describe('NetworkOperations', () => {
     });
 
     describe('listAllSsids', () => {
-        it('should list all SSIDs across WLAN groups', async () => {
+        it('sends the spec-required type (default 3, AP and wireless router) without pagination', async () => {
             const mockData = [{ id: 'ssid-1', name: 'Corp-WiFi' }];
-            vi.mocked(mockRequest.fetchPaginated).mockResolvedValue(mockData);
+            vi.mocked(mockRequest.get).mockResolvedValue({ errorCode: 0, result: mockData });
 
             const result = await networkOps.listAllSsids('site-123');
 
-            expect(mockRequest.fetchPaginated).toHaveBeenCalledWith('/openapi/v1/test-omadac/sites/site-123/wireless-network/ssids', {}, undefined);
+            expect(mockRequest.get).toHaveBeenCalledWith('/openapi/v1/test-omadac/sites/site-123/wireless-network/ssids', { type: 3 }, undefined);
+            expect(mockRequest.fetchPaginated).not.toHaveBeenCalled();
             expect(result).toEqual(mockData);
+        });
+
+        it.each([
+            [{ data: [{ ssidId: 'a' }] }, [{ ssidId: 'a' }]],
+            [{ ssidList: [{ ssidId: 'b' }] }, [{ ssidId: 'b' }]],
+            [{ ssids: [{ ssidId: 'c' }] }, [{ ssidId: 'c' }]],
+            [null, []],
+            [undefined, []],
+        ])('unwraps result %j', async (resultValue, expected) => {
+            vi.mocked(mockRequest.get).mockResolvedValue({ errorCode: 0, result: resultValue });
+
+            await expect(networkOps.listAllSsids('site-123', undefined, 1)).resolves.toEqual(expected);
+            expect(mockRequest.get).toHaveBeenCalledWith(expect.any(String), { type: 1 }, undefined);
+        });
+
+        it('rejects an unexpected result shape instead of reporting no SSIDs', async () => {
+            vi.mocked(mockRequest.get).mockResolvedValue({ errorCode: 0, result: { unexpected: true } });
+
+            await expect(networkOps.listAllSsids('site-123')).rejects.toThrow('Unexpected SSID list shape');
         });
     });
 

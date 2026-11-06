@@ -330,8 +330,8 @@ npm run inspector:build
 
 | Tool | Description |
 | --- | --- |
-| `getWifiHealthSummary` | Composes dashboard, channel, interference and retry evidence with timestamps, missing sections and bounded review heuristics. Read-only. |
-| `diagnoseLogs` | Reads recent event, alert and audit pages plus log settings; distinguishes unavailable data from empty results and reports incomplete history. |
+| `getWifiHealthSummary` | Composes dashboard, channel, interference and retry evidence with timestamps, missing sections and bounded review heuristics. Read-only. `detail: "summary"` (default) keeps findings, per-AP retry/drop averages and occupied-channel utilisation; `detail: "full"` adds raw time series. |
+| `diagnoseLogs` | Reads recent event, alert and audit pages plus log settings; distinguishes unavailable data from empty results and reports incomplete history. `detail: "summary"` (default) reports notification settings as enabled counts; `detail: "full"` lists every type. |
 | `diagnoseCameraConnectivity` | Resolves a camera client and reads its detail/session evidence; reports missing data and network drilldowns without claiming to diagnose Frigate inference. |
 | `setApRadio` | Previews or updates one supported AP band with advertised channel/width validation, preserved sibling settings and bounded readback verification. |
 | `updateSsid` | Previews or updates SSID name, broadcast visibility, guest status or sharing policy while preserving required security fields. Broadcast visibility is not SSID enable/disable. |
@@ -601,7 +601,7 @@ WAN/LAN configuration, SSIDs, WLAN groups, routing, NAT, DHCP, DNS, firewall set
 | `getWlanGroupList` | Gets the list of WLAN groups configured in a site. |
 | `getSsidList` | Gets the list of SSIDs in a WLAN group. |
 | `getSsidDetail` | Gets detailed information for a specific SSID. Required: `wlanId` and `ssidId`. |
-| `listAllSsids` | Lists wireless SSIDs across all WLAN groups. |
+| `listAllSsids` | Lists wireless SSIDs across all WLAN groups. Optional `type` (1 AP, 2 wireless router, 3 both; default 3). |
 | `getFirewallSetting` | Gets the site-global firewall settings returned by the official Omada firewall endpoint. |
 | `getVpnSettings` | Gets VPN settings for a site. |
 | `listSiteToSiteVpns` | Lists site-to-site VPN configurations. |
@@ -748,7 +748,7 @@ Global threat intelligence, IPS alerts, and top-threat summaries.
 | Tool | Description |
 |---|---|
 | `getThreatList` | Gets global threat management list. Required: `archived` (bool). Optional: `startTime`/`endTime` (seconds since epoch), `severity` (0=Critical, 1=Major, 2=Moderate/Concerning, 3=Minor, 4=Low), `page`, `pageSize`. |
-| `getTopThreats` | Gets top threats from the global threat management view. |
+| `getTopThreats` | Gets top threats from the global threat management view. Optional `start`/`end` (Unix seconds); default: last 24 hours. |
 
 </details>
 
@@ -781,14 +781,14 @@ Site dashboard widgets: WiFi and switch summaries, PoE usage, CPU/memory top-N, 
 
 | Tool | Description |
 |---|---|
-| `getDashboardWifiSummary` | Gets WiFi summary from the site dashboard. |
-| `getDashboardSwitchSummary` | Gets switch summary from the site dashboard. |
-| `getDashboardTrafficActivities` | Gets traffic activity data from the site dashboard. |
+| `getDashboardWifiSummary` | Gets WiFi summary from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardSwitchSummary` | Gets switch summary from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardTrafficActivities` | Gets traffic activity data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
 | `getDashboardPoEUsage` | Gets PoE usage data from the site dashboard. |
-| `getDashboardTopCpuUsage` | Gets top CPU usage data from the site dashboard. |
-| `getDashboardTopMemoryUsage` | Gets top memory usage data from the site dashboard. |
-| `getDashboardMostActiveSwitches` | Gets most active switches from the site dashboard. |
-| `getDashboardMostActiveEaps` | Gets most active access points from the site dashboard. |
+| `getDashboardTopCpuUsage` | Gets top CPU usage data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardTopMemoryUsage` | Gets top memory usage data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardMostActiveSwitches` | Gets most active switches from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardMostActiveEaps` | Gets most active access points from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
 | `getDashboardOverview` | Get the site overview: device counts, client counts, connectivity graph, and overall health status. |
 | `getTrafficDistribution` | Gets traffic distribution by protocol/app type over a time range. Requires `start` and `end` timestamps (seconds). |
 | `getRetryAndDroppedRate` | Gets wireless retry rate and dropped packet rate over a time range. Requires `start` and `end` timestamps (seconds). |
@@ -813,7 +813,7 @@ Site-level security insights: threat events, WIDS, rogue AP detection, and VPN t
 | Tool | Description |
 |---|---|
 | `listSiteThreatManagement` | Lists site-level threat management events. |
-| `getWids` | Gets WIDS (Wireless Intrusion Detection) information for a site. |
+| `getWids` | Gets WIDS (Wireless Intrusion Detection) information for a site. Reads all pages. |
 | `getRogueAps` | Gets rogue access points detected in a site. |
 | `getVpnTunnelStats` | Gets VPN tunnel statistics for a site. |
 

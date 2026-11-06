@@ -101,4 +101,52 @@ describe('diagnoseLogs', () => {
             observations: { audit: 'Unavailable; no conclusion about event activity is possible.' },
         });
     });
+
+    describe('detail', () => {
+        const loggingSettings = {
+            webhookConfig: { webhookEnable: false },
+            logNotifications: [
+                { key: 'OSW_DET_STORM', shortMsg: 'Storm', alert: true, event: false, email: true, webhook: false },
+                { key: 'OSW_DET_LOOP', shortMsg: 'Loop', alert: false, event: true, email: false, webhook: false },
+            ],
+        };
+        const auditSettings = { auditLogNotifications: [{ key: 'AUDIT', email: true }] };
+
+        it('summarises notification settings as enabled counts by default', async () => {
+            const { client, tool } = setup();
+            client.getLogSettingForSite.mockResolvedValue(loggingSettings);
+            client.getAuditLogSettingForSite.mockResolvedValue(auditSettings);
+            const result = await tool.invoke();
+            expect(result.detail).toBe('summary');
+            expect(result.sections).toMatchObject({
+                loggingSettings: {
+                    data: {
+                        webhookConfig: { webhookEnable: false },
+                        logNotifications: { total: 2, alertEnabled: 1, eventEnabled: 1, emailEnabled: 1, webhookEnabled: 0 },
+                    },
+                },
+                auditSettings: { data: { auditLogNotifications: { total: 1, emailEnabled: 1 } } },
+                alerts: { data: { data: [1], totalRows: 3 } },
+            });
+        });
+
+        it('returns every notification type with detail=full', async () => {
+            const { client, tool } = setup();
+            client.getLogSettingForSite.mockResolvedValue(loggingSettings);
+            const result = await tool.invoke({ detail: 'full' });
+            expect(result.detail).toBe('full');
+            expect((result.sections as Record<string, { data: unknown }>).loggingSettings.data).toEqual(loggingSettings);
+        });
+
+        it('keeps a failed settings read unknown in summary mode', async () => {
+            const { client, tool } = setup();
+            client.getLogSettingForSite.mockRejectedValue(new Error('forbidden'));
+            client.getAuditLogSettingForSite.mockResolvedValue({ auditLogNotifications: [null] });
+            const result = await tool.invoke();
+            expect(result.sections).toMatchObject({
+                loggingSettings: { status: 'unavailable' },
+                auditSettings: { data: { auditLogNotifications: { total: 1 } } },
+            });
+        });
+    });
 });

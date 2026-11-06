@@ -152,8 +152,8 @@ HTTP is not part of the supported container baseline. It only starts when both o
 
 | Tool | Description |
 | --- | --- |
-| `getWifiHealthSummary` | Composes dashboard, channel, interference and retry evidence with timestamps, missing sections and bounded review heuristics. Read-only. |
-| `diagnoseLogs` | Reads recent event, alert and audit pages plus log settings; distinguishes unavailable data from empty results and reports incomplete history. |
+| `getWifiHealthSummary` | Composes dashboard, channel, interference and retry evidence with timestamps, missing sections and bounded review heuristics. Read-only. `detail: "summary"` (default) keeps findings, per-AP retry/drop averages and occupied-channel utilisation; `detail: "full"` adds raw time series. |
+| `diagnoseLogs` | Reads recent event, alert and audit pages plus log settings; distinguishes unavailable data from empty results and reports incomplete history. `detail: "summary"` (default) reports notification settings as enabled counts; `detail: "full"` lists every type. |
 | `diagnoseCameraConnectivity` | Resolves a camera client and reads its detail/session evidence; reports missing data and network drilldowns without claiming to diagnose Frigate inference. |
 | `setApRadio` | Previews or updates one supported AP band with advertised channel/width validation, preserved sibling settings and bounded readback verification. |
 | `updateSsid` | Previews or updates SSID name, broadcast visibility, guest status or sharing policy while preserving required security fields. Broadcast visibility is not SSID enable/disable. |
@@ -371,7 +371,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | `getWlanGroupList` | Gets the list of WLAN groups configured in a site. |
 | `getSsidList` | Gets the list of SSIDs in a WLAN group. |
 | `getSsidDetail` | Gets detailed information for a specific SSID. Required: `wlanId` and `ssidId`. |
-| `listAllSsids` | Lists wireless SSIDs across all WLAN groups. |
+| `listAllSsids` | Lists wireless SSIDs across all WLAN groups. Optional `type` (1 AP, 2 wireless router, 3 both; default 3). |
 | `getFirewallSetting` | Gets the site-global firewall settings returned by the official Omada firewall endpoint. |
 | `setFirewallSetting` | Updates site firewall settings with dry-run preview using the official Omada Open API firewall endpoint. |
 | `setAclConfigTypeSetting` | Updates the gateway ACL mode (`through profiles` or `custom`) with dry-run preview. |
@@ -470,7 +470,7 @@ Tools ported from sibling MIT-licensed Omada MCP projects (see [NOTICE.md](NOTIC
 | Tool            | Description                                               |
 | --------------- | --------------------------------------------------------- |
 | `getThreatList` | Gets global threat management list with filtering.        |
-| `getTopThreats` | Gets top threats from the global threat management view.  |
+| `getTopThreats` | Gets top threats from the global threat management view. Optional `start`/`end` (Unix seconds); default: last 24 hours. |
 
 ### Composite Troubleshooting Tools
 
@@ -487,14 +487,14 @@ Single-call tools that internally aggregate multiple Omada API calls in parallel
 
 | Tool                             | Description                                                     |
 | -------------------------------- | --------------------------------------------------------------- |
-| `getDashboardWifiSummary` | Gets WiFi summary from the site dashboard. |
-| `getDashboardSwitchSummary` | Gets switch summary from the site dashboard. |
-| `getDashboardTrafficActivities` | Gets traffic activity data from the site dashboard. |
+| `getDashboardWifiSummary` | Gets WiFi summary from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardSwitchSummary` | Gets switch summary from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardTrafficActivities` | Gets traffic activity data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
 | `getDashboardPoEUsage` | Gets PoE usage data from the site dashboard. |
-| `getDashboardTopCpuUsage` | Gets top CPU usage data from the site dashboard. |
-| `getDashboardTopMemoryUsage` | Gets top memory usage data from the site dashboard. |
-| `getDashboardMostActiveSwitches` | Gets most active switches from the site dashboard.              |
-| `getDashboardMostActiveEaps` | Gets most active access points from the site dashboard. |
+| `getDashboardTopCpuUsage` | Gets top CPU usage data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardTopMemoryUsage` | Gets top memory usage data from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardMostActiveSwitches` | Gets most active switches from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
+| `getDashboardMostActiveEaps` | Gets most active access points from the site dashboard. Optional `start`/`end` (Unix seconds); default: last hour. |
 | `getDashboardOverview` | Get the site overview: device counts, client counts, connectivity graph, and overall health status. |
 | `getTrafficDistribution` | Gets traffic distribution by protocol/app type over a time range. Requires `start` and `end` timestamps (seconds). |
 | `getRetryAndDroppedRate` | Gets wireless retry rate and dropped packet rate over a time range. Requires `start` and `end` timestamps (seconds). |
@@ -510,7 +510,7 @@ Single-call tools that internally aggregate multiple Omada API calls in parallel
 | Tool                       | Description                                                        |
 | -------------------------- | ------------------------------------------------------------------ |
 | `listSiteThreatManagement` | Lists site-level threat management events.                         |
-| `getWids` | Gets WIDS (Wireless Intrusion Detection) information for a site. |
+| `getWids` | Gets WIDS (Wireless Intrusion Detection) information for a site. Reads all pages. |
 | `getRogueAps` | Gets rogue access points detected in a site. |
 | `getVpnTunnelStats` | Gets VPN tunnel statistics for a site. |
 ### VPN

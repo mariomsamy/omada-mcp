@@ -20,6 +20,7 @@ describe('tools/getTopThreats', () => {
             getTopThreats: vi.fn(),
         } as unknown as OmadaClient;
 
+        vi.spyOn(Date, 'now').mockReturnValue(1792845296789);
         vi.spyOn(loggerModule.logger, 'info').mockImplementation(() => {
             // Mock implementation
         });
@@ -46,10 +47,21 @@ describe('tools/getTopThreats', () => {
 
             const result = await toolHandler({}, { sessionId: 'test-session' });
 
-            expect(mockClient.getTopThreats).toHaveBeenCalledWith(undefined);
+            expect(mockClient.getTopThreats).toHaveBeenCalledWith(undefined, { start: 1792758896, end: 1792845296 });
             expect(result).toEqual({
                 content: [{ type: 'text', text: JSON.stringify(mockData, null, 2) }],
             });
+        });
+
+        it('sends the spec-required startTime/endTime window and validates it', async () => {
+            (mockClient.getTopThreats as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+            registerGetTopThreatsTool(mockServer, mockClient);
+
+            await toolHandler({ start: 1700000000, end: 1700086400 }, { sessionId: 'test-session' });
+            expect(mockClient.getTopThreats).toHaveBeenCalledWith(undefined, { start: 1700000000, end: 1700086400 });
+
+            await expect(toolHandler({ end: 1700086400 }, { sessionId: 'test-session' })).rejects.toThrow('start and end must be provided together');
+            expect(mockClient.getTopThreats).toHaveBeenCalledTimes(1);
         });
 
         it('should handle errors', async () => {

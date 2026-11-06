@@ -1,5 +1,6 @@
 import type { CustomHeaders, OmadaApiResponse, PaginatedResult } from '../types/index.js';
 import type { GetThreatListOptions, ThreatInfo } from '../types/threatInfo.js';
+import { ONE_DAY_SECONDS, resolveTimeWindow, type TimeWindow } from '../utils/timeWindow.js';
 import type { RequestHandler } from './request.js';
 
 /**
@@ -60,11 +61,14 @@ export class SecurityOperations {
 
     /**
      * Get top threats from the global view threat management.
-     * OperationId: getTopThreatList
+     * OperationId: getGlobalTopThreatList. startTime/endTime (Unix seconds) are required by the
+     * spec; the default is the last 24 hours. Controller 6.3 returns an object
+     * (`{ geo, classification }`), so the result is not narrowed to an array.
      */
-    public async getTopThreats(customHeaders?: CustomHeaders): Promise<unknown[]> {
+    public async getTopThreats(customHeaders?: CustomHeaders, window?: TimeWindow): Promise<unknown> {
         const path = this.buildPath('/security/threat-management/top');
-        const response = await this.request.get<OmadaApiResponse<unknown[]>>(path, undefined, customHeaders);
+        const { start, end } = window ?? resolveTimeWindow(undefined, undefined, ONE_DAY_SECONDS);
+        const response = await this.request.get<OmadaApiResponse<unknown>>(path, { startTime: start, endTime: end }, customHeaders);
         this.request.ensureSuccess(response);
         return response.result ?? [];
     }
