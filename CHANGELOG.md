@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- README restructured: centred header with quick links, at-a-glance table, four-step quick start with per-agent collapsible configs, example prompts, safety and profile tables, a single configuration reference, a skills table, and an alphabetical tool index with per-area counts. Tool rows within each table are sorted alphabetically and the operation-ID map is its own section.
+
 ### Added
 
 - `detail: "summary" | "full"` on `getWifiHealthSummary` and `diagnoseLogs` (default `summary`).
